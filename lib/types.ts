@@ -1,0 +1,81 @@
+export type Region = { id: string; name: string; fee: number | null };
+
+export type Settings = {
+  id: number;
+  shop_name: string;
+  tagline: string;
+  bank: string;
+  account: string;
+  holder: string;
+  deposit: number;
+  deadline_hours: number;
+  open_min: number;
+  close_min: number;
+  buffer_min: number;
+  closed_dates: string[];
+  regions: Region[];
+};
+
+export type Category = { id: string; name: string; sort: number };
+
+export type Service = {
+  id: string;
+  category_id: string | null;
+  name: string;
+  description: string;
+  duration_min: number;
+  price: number;
+  sort: number;
+  deleted: boolean;
+};
+
+export type PortfolioItem = {
+  id: string;
+  category_id: string | null;
+  title: string;
+  image_path: string;
+  sort: number;
+  created_at: string;
+};
+
+export type Review = {
+  id: string;
+  name: string;
+  rating: number;
+  service_label: string;
+  body: string;
+  hidden: boolean;
+  reply: string;
+  created_at: string;
+};
+
+export type BookingItem = { id: string; name: string; price: number; n: number };
+
+export type Booking = {
+  id: string;
+  code: string;
+  name: string;
+  phone: string;
+  items: BookingItem[];
+  region: string;
+  region_name: string;
+  address: string;
+  event_note: string;
+  date: string;
+  start_min: number;
+  duration_min: number;
+  subtotal: number;
+  travel_fee: number | null;
+  total: number;
+  deposit: number;
+  status: "pending" | "confirmed" | "done" | "canceled";
+  memo: string;
+  created_at: string;
+};
+
+export const STATUS_LABEL: Record<Booking["status"], string> = {
+  pending: "입금 대기",
+  confirmed: "예약 확정",
+  done: "시술 완료",
+  canceled: "취소",
+};

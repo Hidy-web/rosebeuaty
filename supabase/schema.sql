@@ -1,0 +1,253 @@
+-- 로즈 출장 헤어·메이크업 예약 — Supabase 스키마
+-- Supabase 대시보드 > SQL Editor 에 이 파일 전체를 붙여넣고 Run 하세요. (처음 한 번만)
+
+create extension if not exists pgcrypto;
+
+-- ───────── 관리자 ─────────
+create table if not exists admins (
+  user_id uuid primary key references auth.users on delete cascade
+);
+alter table admins enable row level security;
+
+create or replace function is_admin() returns boolean
+language sql stable security definer set search_path = public as $$
+  select exists (select 1 from admins where user_id = auth.uid());
+$$;
+grant execute on function is_admin() to anon, authenticated;
+
+create policy "admins read self" on admins for select using (user_id = auth.uid());
+
+-- ───────── 설정 (한 줄) ─────────
+create table if not exists settings (
+  id int primary key default 1 check (id = 1),
+  shop_name text not null default '로즈 출장 헤어·메이크업',
+  tagline text not null default '행사 날 아침, 계신 곳으로 찾아갑니다',
+  bank text not null default '',
+  account text not null default '',
+  holder text not null default '',
+  deposit int not null default 30000 check (deposit >= 0),
+  deadline_hours int not null default 3 check (deadline_hours between 1 and 72),
+  open_min int not null default 420,
+  close_min int not null default 1200,
+  buffer_min int not null default 60 check (buffer_min >= 0),
+  closed_dates date[] not null default '{}',
+  regions jsonb not null default '[{"id":"seoul","name":"서울","fee":0},{"id":"etc","name":"그 외 지역 (상담 후 안내)","fee":null}]'
+);
+insert into settings (id) values (1) on conflict do nothing;
+alter table settings enable row level security;
+create policy "settings public read" on settings for select using (true);
+create policy "settings admin update" on settings for update using (is_admin()) with check (is_admin());
+
+-- ───────── 메뉴 ─────────
+create table if not exists service_categories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique check (char_length(name) between 1 and 30),
+  sort int not null default 0
+);
+create table if not exists services (
+  id uuid primary key default gen_random_uuid(),
+  category_id uuid references service_categories on delete set null,
+  name text not null check (char_length(name) between 1 and 60),
+  description text not null default '',
+  duration_min int not null default 60 check (duration_min between 30 and 600),
+  price int not null check (price >= 0),
+  sort int not null default 0,
+  deleted boolean not null default false,
+  created_at timestamptz not null default now()
+);
+alter table service_categories enable row level security;
+alter table services enable row level security;
+create policy "svc cat public read" on service_categories for select using (true);
+create policy "svc cat admin write" on service_categories for all using (is_admin()) with check (is_admin());
+create policy "svc public read" on services for select using (true);
+create policy "svc admin write" on services for all using (is_admin()) with check (is_admin());
+
+-- ───────── 포트폴리오 ─────────
+create table if not exists portfolio_categories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null unique check (char_length(name) between 1 and 30),
+  sort int not null default 0
+);
+create table if not exists portfolio_items (
+  id uuid primary key default gen_random_uuid(),
+  category_id uuid references portfolio_categories on delete cascade,
+  title text not null default '',
+  image_path text not null,
+  sort int not null default 0,
+  created_at timestamptz not null default now()
+);
+alter table portfolio_categories enable row level security;
+alter table portfolio_items enable row level security;
+create policy "pf cat public read" on portfolio_categories for select using (true);
+create policy "pf cat admin write" on portfolio_categories for all using (is_admin()) with check (is_admin());
+create policy "pf public read" on portfolio_items for select using (true);
+create policy "pf admin write" on portfolio_items for all using (is_admin()) with check (is_admin());
+
+insert into storage.buckets (id, name, public) values ('portfolio', 'portfolio', true) on conflict do nothing;
+create policy "portfolio admin upload" on storage.objects for insert to authenticated with check (bucket_id = 'portfolio' and is_admin());
+create policy "portfolio admin delete" on storage.objects for delete to authenticated using (bucket_id = 'portfolio' and is_admin());
+
+-- ───────── 리뷰 ─────────
+create table if not exists reviews (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) between 1 and 20),
+  rating int not null check (rating between 1 and 5),
+  service_label text not null default '' check (char_length(service_label) <= 60),
+  body text not null check (char_length(body) between 1 and 1000),
+  hidden boolean not null default false,
+  reply text not null default '',
+  created_at timestamptz not null default now()
+);
+alter table reviews enable row level security;
+create policy "reviews public read visible" on reviews for select using (not hidden or is_admin());
+create policy "reviews public insert" on reviews for insert with check (not hidden and reply = '');
+create policy "reviews admin update" on reviews for update using (is_admin()) with check (is_admin());
+create policy "reviews admin delete" on reviews for delete using (is_admin());
+
+-- ───────── 예약 ─────────
+create table if not exists bookings (
+  id uuid primary key default gen_random_uuid(),
+  code text not null unique,
+  name text not null,
+  phone text not null,
+  items jsonb not null,
+  region text not null,
+  region_name text not null default '',
+  address text not null,
+  event_note text not null default '',
+  date date not null,
+  start_min int not null,
+  duration_min int not null,
+  subtotal int not null,
+  travel_fee int,
+  total int not null,
+  deposit int not null,
+  status text not null default 'pending' check (status in ('pending','confirmed','done','canceled')),
+  memo text not null default '',
+  created_at timestamptz not null default now()
+);
+create index if not exists bookings_date_idx on bookings (date);
+alter table bookings enable row level security;
+-- 손님은 예약 목록을 직접 볼 수 없어요. 예약은 아래 함수로만 만들어요.
+create policy "bookings admin all" on bookings for all using (is_admin()) with check (is_admin());
+
+-- 손님 화면이 빈 시간을 계산할 때 쓰는 함수 (이름·연락처는 돌려주지 않음)
+create or replace function busy_slots(d_from date, d_to date)
+returns table (date date, start_min int, end_min int)
+language sql stable security definer set search_path = public as $$
+  select b.date, b.start_min, b.start_min + b.duration_min
+  from bookings b
+  where b.status in ('pending','confirmed') and b.date between d_from and d_to;
+$$;
+grant execute on function busy_slots(date, date) to anon, authenticated;
+
+create or replace function create_booking(
+  p_name text, p_phone text, p_items jsonb, p_region text, p_address text,
+  p_event_note text, p_date date, p_start int, p_memo text
+) returns json
+language plpgsql security definer set search_path = public as $$
+declare
+  s settings;
+  it jsonb;
+  svc services;
+  n int;
+  dur int := 0;
+  sub int := 0;
+  fee int;
+  region_name text;
+  items_out jsonb := '[]'::jsonb;
+  now_seoul timestamp := now() at time zone 'Asia/Seoul';
+  new_code text;
+begin
+  select * into s from settings where id = 1;
+
+  p_name := btrim(coalesce(p_name, ''));
+  p_phone := btrim(coalesce(p_phone, ''));
+  p_address := btrim(coalesce(p_address, ''));
+  if char_length(p_name) not between 1 and 20 then raise exception 'invalid_name'; end if;
+  if p_phone !~ '^01[0-9]-?[0-9]{3,4}-?[0-9]{4}$' then raise exception 'invalid_phone'; end if;
+  if char_length(p_address) not between 2 and 200 then raise exception 'invalid_address'; end if;
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) not between 1 and 20 then raise exception 'invalid_items'; end if;
+
+  for it in select * from jsonb_array_elements(p_items) loop
+    n := (it->>'n')::int;
+    if n is null or n not between 1 and 10 then raise exception 'invalid_items'; end if;
+    select * into svc from services where id = (it->>'id')::uuid and not deleted;
+    if not found then raise exception 'menu_not_found'; end if;
+    dur := dur + svc.duration_min * n;
+    sub := sub + svc.price * n;
+    items_out := items_out || jsonb_build_object('id', svc.id, 'name', svc.name, 'price', svc.price, 'n', n);
+  end loop;
+
+  select (x->>'fee')::int, x->>'name' into fee, region_name
+  from jsonb_array_elements(s.regions) x where x->>'id' = p_region;
+  if region_name is null then raise exception 'invalid_region'; end if;
+
+  if p_date < now_seoul::date or p_date > now_seoul::date + 180 then raise exception 'invalid_date'; end if;
+  if p_date = any (s.closed_dates) then raise exception 'closed_day'; end if;
+  if p_start % 30 <> 0 or p_start < s.open_min or p_start + dur > s.close_min then raise exception 'invalid_time'; end if;
+  if p_date = now_seoul::date and p_start <= extract(hour from now_seoul) * 60 + extract(minute from now_seoul) + 120 then
+    raise exception 'invalid_time';
+  end if;
+
+  -- 같은 날짜 예약이 동시에 들어와도 겹치지 않도록 잠금
+  perform pg_advisory_xact_lock(hashtext('booking-' || p_date::text));
+  if exists (
+    select 1 from bookings b
+    where b.date = p_date and b.status in ('pending','confirmed')
+      and p_start < b.start_min + b.duration_min + s.buffer_min
+      and p_start + dur + s.buffer_min > b.start_min
+  ) then
+    raise exception 'slot_taken';
+  end if;
+
+  new_code := 'R' || to_char(now_seoul, 'MMDD') || '-' || upper(substr(md5(gen_random_uuid()::text), 1, 4));
+  insert into bookings (code, name, phone, items, region, region_name, address, event_note, date, start_min,
+                        duration_min, subtotal, travel_fee, total, deposit, memo)
+  values (new_code, p_name, p_phone, items_out, p_region, region_name, p_address, left(coalesce(p_event_note, ''), 100),
+          p_date, p_start, dur, sub, fee, sub + coalesce(fee, 0), s.deposit, left(coalesce(p_memo, ''), 500));
+
+  return json_build_object('code', new_code, 'items', items_out, 'subtotal', sub, 'travel_fee', fee,
+                           'total', sub + coalesce(fee, 0), 'deposit', s.deposit, 'duration', dur,
+                           'region_name', region_name);
+end;
+$$;
+grant execute on function create_booking(text, text, jsonb, text, text, text, date, int, text) to anon, authenticated;
+
+-- 손님이 예약번호 + 연락처로 상태를 확인하는 함수
+create or replace function lookup_booking(p_code text, p_phone text)
+returns json
+language sql stable security definer set search_path = public as $$
+  select json_build_object('code', code, 'status', status, 'date', date, 'start_min', start_min,
+                           'items', items, 'total', total, 'deposit', deposit, 'address', address)
+  from bookings
+  where code = upper(btrim(p_code))
+    and regexp_replace(phone, '[^0-9]', '', 'g') = regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g')
+  limit 1;
+$$;
+grant execute on function lookup_booking(text, text) to anon, authenticated;
+
+-- ───────── 기본 메뉴 (관리자 화면에서 고칠 수 있어요) ─────────
+do $$
+declare c_hair uuid; c_mk uuid; c_pk uuid; c_add uuid;
+begin
+  if not exists (select 1 from service_categories) then
+    insert into service_categories (name, sort) values ('헤어', 1) returning id into c_hair;
+    insert into service_categories (name, sort) values ('메이크업', 2) returning id into c_mk;
+    insert into service_categories (name, sort) values ('헤어+메이크업', 3) returning id into c_pk;
+    insert into service_categories (name, sort) values ('추가', 4) returning id into c_add;
+    insert into services (category_id, name, description, duration_min, price, sort) values
+      (c_hair, '하객 헤어', '', 60, 70000, 1),
+      (c_hair, '돌잔치 엄마 헤어', '', 60, 90000, 2),
+      (c_mk, '하객 메이크업', '오래 가는 베이스', 60, 100000, 1),
+      (c_mk, '돌잔치 엄마 메이크업', '사진에 잘 받는 화사한 톤', 60, 100000, 2),
+      (c_pk, '하객 헤어+메이크업', '', 90, 150000, 1),
+      (c_pk, '돌잔치 엄마 헤어+메이크업', '가장 많이 찾으세요', 120, 190000, 2),
+      (c_pk, '가족사진·촬영 헤어+메이크업', '스튜디오 동행 가능', 120, 200000, 3),
+      (c_add, '아이 헤어', '돌잔치 주인공·형제자매', 30, 30000, 1),
+      (c_add, '어머님 메이크업', '양가 어머님 등 동반 가족', 60, 90000, 2);
+  end if;
+  if not exists (select 1 from portfolio_categories) then
+    insert into portfolio_categories (name, sort) values ('돌잔치', 1), ('하객', 2), ('촬영', 3);
+  end if;
+end $$;
