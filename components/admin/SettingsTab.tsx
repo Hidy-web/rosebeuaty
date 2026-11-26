@@ -4,6 +4,7 @@ import { sb } from "@/lib/supabase";
 import type { Region, Settings } from "@/lib/types";
 import { DEFAULT_EXTRA_NOTICE, hm } from "@/lib/time";
 import type { TabProps } from "./AdminApp";
+import { DEFAULT_PROMISE, DEFAULT_REFUND_POLICY } from "@/lib/pricing";
 
 const HOURS = Array.from({ length: 33 }, (_, i) => 300 + i * 30); // 05:00 ~ 21:00
 
@@ -12,6 +13,10 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
   const [saving, setSaving] = useState(false);
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) => setS({ ...s, [k]: v });
   const setRegion = (i: number, patch: Partial<Region>) => set("regions", s.regions.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  const early = s.early_fees ?? [{ before: 420, fee: 30000 }, { before: 360, fee: 50000 }];
+  const setEarly = (v: { before: number; fee: number }[]) => set("early_fees", v);
+  const num = (v: string, lo: number, hi: number) => Math.min(hi, Math.max(lo, Math.round(Number(v) || 0)));
 
   async function save() {
     if (s.close_min <= s.open_min) return toast("마지막 방문 가능 시간이 시작 시간보다 늦어야 해요");
@@ -22,7 +27,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
     void _id; void _c;
     const { error } = await sb().from("settings").update({ ...patch, regions: s.regions.map((r) => ({ ...r, name: r.name.trim() })) }).eq("id", 1);
     setSaving(false);
-    if (error) return toast(/confirm_days|retention_months|privacy_|extra_notice/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
+    if (error) return toast(/confirm_days|retention_months|privacy_|extra_notice|early_fees|weekday_discount|group_|deposit_pct|refund_policy|promise/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
     toast("설정을 저장했어요");
     reload();
   }
@@ -41,10 +46,41 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
         <div className="field"><label htmlFor="s-bank">은행</label><input id="s-bank" value={s.bank} onChange={(e) => set("bank", e.target.value)} placeholder="예: 국민은행" /></div>
         <div className="field"><label htmlFor="s-acct">계좌번호</label><input id="s-acct" value={s.account} onChange={(e) => set("account", e.target.value)} /></div>
         <div className="field"><label htmlFor="s-holder">예금주</label><input id="s-holder" value={s.holder} onChange={(e) => set("holder", e.target.value)} /></div>
-        <div className="field"><label htmlFor="s-dep">예약금 (원)</label><input id="s-dep" type="number" min={0} step={1000} value={s.deposit} onChange={(e) => set("deposit", Math.max(0, Number(e.target.value) || 0))} /></div>
+        <div className="field"><label htmlFor="s-dpct">예약금 비율 (총 금액의 %, 0이면 고정 금액)</label><input id="s-dpct" type="number" min={0} max={100} step={5} value={s.deposit_pct ?? 20} onChange={(e) => set("deposit_pct", num(e.target.value, 0, 100))} /></div>
+        <div className="field"><label htmlFor="s-dep">{(s.deposit_pct ?? 20) > 0 ? "최소 예약금 (원)" : "예약금 (원)"}</label><input id="s-dep" type="number" min={0} step={1000} value={s.deposit} onChange={(e) => set("deposit", Math.max(0, Number(e.target.value) || 0))} /></div>
         <div className="field"><label htmlFor="s-dl">입금 기한 (시간)</label><input id="s-dl" type="number" min={1} max={72} value={s.deadline_hours} onChange={(e) => set("deadline_hours", Math.min(72, Math.max(1, Number(e.target.value) || 1)))} /></div>
         <div className="field"><label htmlFor="s-cd">행사일 며칠 전까지 확정 (일)</label><input id="s-cd" type="number" min={0} max={30} value={s.confirm_days ?? 3} onChange={(e) => set("confirm_days", Math.min(30, Math.max(0, Number(e.target.value) || 0)))} /></div>
       </div>
+      <h3>할인</h3>
+      <p className="note">할인은 시술 금액에만 적용돼요. 0으로 두면 꺼져요.</p>
+      <div className="settings">
+        <div className="field"><label htmlFor="s-wd">평일(월~금) 할인 (%)</label><input id="s-wd" type="number" min={0} max={50} value={s.weekday_discount_pct ?? 10} onChange={(e) => set("weekday_discount_pct", num(e.target.value, 0, 50))} /></div>
+        <div className="field"><label htmlFor="s-gm">인원 할인 기준 (명 이상)</label><input id="s-gm" type="number" min={0} max={20} value={s.group_min ?? 4} onChange={(e) => set("group_min", num(e.target.value, 0, 20))} /></div>
+        <div className="field"><label htmlFor="s-gd">인원 할인 (1인당, 원)</label><input id="s-gd" type="number" min={0} step={5000} value={s.group_discount ?? 10000} onChange={(e) => set("group_discount", num(e.target.value, 0, 1000000))} /></div>
+      </div>
+      <h3>이른 시간 할증</h3>
+      <p className="note">정한 시각보다 일찍 시작하면 방문 1회당 붙어요. 여러 개에 해당하면 가장 큰 금액 하나만 붙어요. 이른 시간 예약을 받으려면 아래 &ldquo;가장 이른 방문&rdquo;도 앞당겨 주세요.</p>
+      {early.map((t, i) => (
+        <div className="price-row svc-edit" key={i}>
+          <select aria-label="기준 시각" value={t.before} onChange={(e) => setEarly(early.map((x, j) => (j === i ? { ...x, before: Number(e.target.value) } : x)))}>
+            {HOURS.filter((m) => m <= 600).map((m) => <option key={m} value={m}>{hm(m)} 전 시작</option>)}
+          </select>
+          <span className="pinput">
+            <input className="num" type="number" min={0} step={5000} aria-label="할증 금액" value={t.fee} onChange={(e) => setEarly(early.map((x, j) => (j === i ? { ...x, fee: num(e.target.value, 0, 1000000) } : x)))} />
+            <span className="muted">원</span>
+          </span>
+          <button className="btn sm danger" onClick={() => setEarly(early.filter((_, j) => j !== i))}>삭제</button>
+        </div>
+      ))}
+      <div><button className="btn sm ghost" onClick={() => setEarly([...early, { before: 300, fee: 70000 }])}>+ 할증 추가</button></div>
+      <h3>취소·환불 규정</h3>
+      <p className="note">손님이 예약 신청 전에 이 규정에 [필수] 동의해요. 메뉴·가격 화면에도 보여요. 한 줄에 하나씩 적어 주세요.</p>
+      <div className="field"><label htmlFor="s-refund">규정</label>
+        <textarea id="s-refund" rows={7} value={s.refund_policy ?? DEFAULT_REFUND_POLICY} onChange={(e) => set("refund_policy", e.target.value)} /></div>
+      <h3>약속 문구</h3>
+      <p className="note">첫 화면과 예약 완료 화면에 보여요. 비우면 나오지 않아요.</p>
+      <div className="field"><label htmlFor="s-promise">문구</label>
+        <input id="s-promise" value={s.promise ?? DEFAULT_PROMISE} onChange={(e) => set("promise", e.target.value)} /></div>
       <h3>별도 비용 안내</h3>
       <p className="note">메뉴·가격 화면과 예약 신청 화면에 보여요. 한 줄에 하나씩 적어 주세요. 비우면 안내가 나오지 않아요.</p>
       <div className="field"><label htmlFor="s-extra">안내 문구</label>

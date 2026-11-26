@@ -4,6 +4,7 @@ import { imageUrl, reviewErrorText, sb } from "@/lib/supabase";
 import { STATUS_LABEL, type Booking } from "@/lib/types";
 import { dLabel, hm, won } from "@/lib/time";
 import ExtraNotice from "./ExtraNotice";
+import { DEFAULT_REFUND_POLICY, lines } from "@/lib/pricing";
 import { Loading, Toast, useShopData, useToast } from "./useShopData";
 import BookingFlow from "./BookingFlow";
 
@@ -59,6 +60,7 @@ export default function GuestApp() {
       <section className="hero">
         <p className="eyebrow">혼주 · 하객 · 행사 출장 헤어메이크업</p>
         <h1>{st.tagline}</h1>
+        {(st.promise ?? "").trim() && <p className="promise">{st.promise}</p>}
         <div className="meta">
           <span>{st.regions.filter((r) => r.fee !== null).map((r) => r.name).join("·")} 출장</span>
           {visibleReviews.length > 0 && (
@@ -100,9 +102,27 @@ export default function GuestApp() {
                 </div>
               ))}
               <p className="note">
-                가격은 1인 기준이에요. 모든 예약은 예약금 {won(st.deposit)} 입금 후 확정되며, 예약금은 당일 결제 금액에서 빠져요.
+                가격은 1인 기준이에요. 모든 예약은 예약금{(st.deposit_pct ?? 0) > 0 ? `(총 금액의 ${st.deposit_pct}%, 최소 ${won(st.deposit)})` : ` ${won(st.deposit)}`} 입금 후 확정되며, 예약금은 당일 결제 금액에서 빠져요.
               </p>
+              {((st.weekday_discount_pct ?? 0) > 0 || ((st.group_min ?? 0) > 0 && (st.group_discount ?? 0) > 0) || (st.early_fees ?? []).length > 0) && (
+                <div className="extra-notice">
+                  <b>할인 · 할증</b>
+                  <ul>
+                    {(st.weekday_discount_pct ?? 0) > 0 && <li>평일(월~금) 예약은 시술 금액 {st.weekday_discount_pct}% 할인</li>}
+                    {(st.group_min ?? 0) > 0 && (st.group_discount ?? 0) > 0 && <li>{st.group_min}명 이상 예약하면 1인당 {won(st.group_discount!)} 할인</li>}
+                    {[...(st.early_fees ?? [])].sort((a, b) => b.before - a.before).map((t) => (
+                      <li key={t.before}>{hm(t.before)} 전 시작 +{won(t.fee)} (방문 1회당)</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               <ExtraNotice text={st.extra_notice} />
+              {lines(st.refund_policy ?? DEFAULT_REFUND_POLICY).length > 0 && (
+                <details className="refund">
+                  <summary>취소·환불 규정 보기</summary>
+                  <ul>{lines(st.refund_policy ?? DEFAULT_REFUND_POLICY).map((l, i) => <li key={i}>{l}</li>)}</ul>
+                </details>
+              )}
             </div>
           )}
 

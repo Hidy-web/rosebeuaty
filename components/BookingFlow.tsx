@@ -5,6 +5,7 @@ import { DOW, addDays, dLabel, dow, hm, seoulNow, won } from "@/lib/time";
 import type { ShopData } from "./useShopData";
 import { ConsentSummary } from "./PrivacyPolicy";
 import ExtraNotice from "./ExtraNotice";
+import { DEFAULT_REFUND_POLICY, earlyFee, lines, price } from "@/lib/pricing";
 
 type Busy = { date: string; start_min: number; end_min: number };
 type Made = {
@@ -64,6 +65,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
   const finderEl = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
   const [agree, setAgree] = useState(false);
+  const [agreeRefund, setAgreeRefund] = useState(false);
   const [made, setMade] = useState<{ res: Made; date: string; start: number; deadline: Date } | null>(null);
 
   const now = seoulNow();
@@ -82,6 +84,8 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
   const subtotal = items.reduce((a, i) => a + i.svc.price * i.n, 0);
   const people = items.reduce((a, i) => a + i.n, 0);
   const region = st.regions.find((r) => r.id === form.region) ?? st.regions[0];
+  const pr = price(st, { subtotal, people, travelFee: region?.fee ?? null, date, start });
+  const refundLines = lines(st.refund_policy ?? DEFAULT_REFUND_POLICY);
   const itemsText = items.map((i) => i.svc.name + (i.n > 1 ? ` ×${i.n}` : "")).join(", ");
 
   async function loadBusy() {
@@ -152,6 +156,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
     if (!address) return toast("방문 주소를 입력해 주세요");
     if (!form.name.trim()) return toast("예약자 이름을 입력해 주세요");
     if (!/^01[0-9]-?\d{3,4}-?\d{4}$/.test(form.phone.trim())) return toast("연락처를 010-0000-0000 형식으로 입력해 주세요");
+    if (refundLines.length && !agreeRefund) return toast("취소·환불 규정을 확인하고 동의해 주세요");
     if (!agree) return toast("개인정보 수집·이용에 동의해 주세요");
     if (!date || start === null) return;
     setSaving(true);
@@ -213,8 +218,11 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
       )}
       <div><span className="muted">시술 금액</span><span className="num">{won(subtotal)}</span></div>
       <div><span className="muted">출장비 ({region?.name.split(" (")[0]})</span><span className="num">{region?.fee == null ? "상담 후 안내" : region.fee === 0 ? "무료" : won(region.fee)}</span></div>
-      <div><span className="muted">총 금액</span><b className="num">{won(subtotal + (region?.fee ?? 0))}{region?.fee == null ? " + 출장비" : ""}</b></div>
-      <div><span className="muted">예약금 (먼저 입금)</span><b className="num">{won(st.deposit)}</b></div>
+      {pr.early > 0 && <div><span className="muted">이른 시간 할증</span><span className="num">+{won(pr.early)}</span></div>}
+      {pr.weekday > 0 && <div><span className="muted">평일 할인 ({st.weekday_discount_pct}%)</span><span className="num disc">−{won(pr.weekday)}</span></div>}
+      {pr.group > 0 && <div><span className="muted">{st.group_min}인 이상 할인</span><span className="num disc">−{won(pr.group)}</span></div>}
+      <div><span className="muted">총 금액</span><b className="num">{won(pr.total)}{region?.fee == null ? " + 출장비" : ""}</b></div>
+      <div><span className="muted">예약금 (먼저 입금)</span><b className="num">{won(pr.deposit)}</b></div>
     </div>
   );
 
@@ -318,13 +326,21 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
                 <>
                   <h3>{dLabel(date)} 방문 시작 시간</h3>
                   <div className="slots">
-                    {slotsFor(date).map((x) => (
-                      <button key={x.t} className="slot num" aria-pressed={start === x.t} disabled={!x.ok} onClick={() => setStart(x.t)}>
-                        {hm(x.t)}
-                      </button>
-                    ))}
+                    {slotsFor(date).map((x) => {
+                      const ef = earlyFee(st, x.t);
+                      return (
+                        <button key={x.t} className="slot num" aria-pressed={start === x.t} disabled={!x.ok} onClick={() => setStart(x.t)}>
+                          {hm(x.t)}
+                          {ef > 0 && x.ok && <small className="slot-fee">+{ef / 10000}만</small>}
+                        </button>
+                      );
+                    })}
                   </div>
-                  {start !== null && <p className="num"><b>{hm(start)}</b>에 방문해요.</p>}
+                  {start !== null && <p className="num"><b>{hm(start)}</b>에 방문해요.{pr.early > 0 && <> 이른 시간 할증 {won(pr.early)}이 더해져요.</>}</p>}
+                  {(st.early_fees ?? []).length > 0 && (
+                    <p className="note">이른 시간 할증은 인원과 관계없이 방문 1회당 붙어요.</p>
+                  )}
+                  {pr.weekday > 0 && <p className="note">평일 예약이라 시술 금액에서 {st.weekday_discount_pct}% 할인돼요.</p>}
                   <p className="callout">
                     같은 날 앞뒤 예약 장소와의 거리에 따라 고르신 시간에 방문이 어려울 수 있어요. 그런 경우 예약금 입금 전에 먼저 연락드려 시간을 조정할게요.
                   </p>
@@ -387,6 +403,15 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             <label htmlFor="g-memo">요청사항 (선택)</label>
             <textarea id="g-memo" value={form.memo} maxLength={500} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="한복 착용 여부, 원하는 스타일, 주차 안내 등" />
           </div>
+          {refundLines.length > 0 && (
+            <div className="consent">
+              <label className="consent-check">
+                <input type="checkbox" checked={agreeRefund} onChange={(e) => setAgreeRefund(e.target.checked)} />
+                <span><b>[필수]</b> 아래 취소·환불 규정을 확인했고 동의해요</span>
+              </label>
+              <ul className="policy-list">{refundLines.map((l, i) => <li key={i}>{l}</li>)}</ul>
+            </div>
+          )}
           <div className="consent">
             <label className="consent-check">
               <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
@@ -412,6 +437,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
         <>
           <div className="done-mark">✓</div>
           <h2>예약 신청이 접수됐어요</h2>
+          {(st.promise ?? "").trim() && <p className="promise">{st.promise}</p>}
           <p className="muted">
             아직 확정 전이에요. 아래 계좌로 예약금을 보내 주시면 확인 후 확정 연락을 드려요.
             {confirmDays > 0 && <> 행사일 {confirmDays}일 전까지 입금이 확인되어야 예약이 확정돼요.</>}

@@ -43,6 +43,14 @@ alter table settings add column if not exists privacy_officer text not null defa
 alter table settings add column if not exists privacy_contact text not null default '';
 -- 별도 비용 안내 (주차비, 가발·속눈썹 등)
 alter table settings add column if not exists extra_notice text not null default E'주차비는 실비로 받아요. (무료 주차가 되면 0원)\n가발(헤어피스)·속눈썹 비용은 별도로 받아요.';
+-- 할증·할인·예약금 비율·환불 규정·약속 문구 (나중에 추가된 칸)
+alter table settings add column if not exists early_fees jsonb not null default '[{"before":420,"fee":30000},{"before":360,"fee":50000}]';
+alter table settings add column if not exists weekday_discount_pct int not null default 10 check (weekday_discount_pct between 0 and 50);
+alter table settings add column if not exists group_min int not null default 4 check (group_min between 0 and 20);
+alter table settings add column if not exists group_discount int not null default 10000 check (group_discount >= 0);
+alter table settings add column if not exists deposit_pct int not null default 20 check (deposit_pct between 0 and 100);
+alter table settings add column if not exists refund_policy text not null default E'행사 30일 전까지 취소하면 예약금을 전액 돌려드려요.\n행사 29일~8일 전에 취소하면 예약금에서 총 금액의 10%를 뺀 나머지를 돌려드려요.\n행사 7일 이내에 취소하거나 연락 없이 예약을 지키지 않으면 예약금은 돌려드리지 않아요.\n날짜·시간 변경은 행사 14일 전까지 1회 무료예요. 그 뒤에는 가능한 일정 안에서 1회 2만 원이 들어요.\n가게 사정으로 취소하게 되면 예약금 전액을 돌려드리고 총 금액의 10%를 더 배상해 드려요.\n천재지변·감염병 등으로 진행이 어려우면 위약금 없이 일정을 바꾸거나 전액 돌려드려요.';
+alter table settings add column if not exists promise text not null default '행사 시간에 늦지 않도록 전날 꼭 확인 연락을 드려요.';
 alter table settings enable row level security;
 drop policy if exists "settings public read" on settings;
 create policy "settings public read" on settings for select using (true);
@@ -153,6 +161,8 @@ create table if not exists bookings (
 );
 create index if not exists bookings_date_idx on bookings (date);
 -- 어느 예약의 리뷰인지 (예약당 리뷰 한 개)
+alter table bookings add column if not exists early_fee int not null default 0;
+alter table bookings add column if not exists discount int not null default 0;
 alter table reviews add column if not exists booking_id uuid unique references bookings(id) on delete set null;
 alter table bookings enable row level security;
 -- 손님은 예약 목록을 직접 볼 수 없어요. 예약은 아래 함수로만 만들어요.
@@ -186,6 +196,11 @@ declare
   items_out jsonb := '[]'::jsonb;
   now_seoul timestamp := now() at time zone 'Asia/Seoul';
   new_code text;
+  people int := 0;
+  early int := 0;
+  disc int := 0;
+  tot int;
+  dep int;
 begin
   select * into s from settings where id = 1;
 
@@ -204,6 +219,7 @@ begin
     if not found then raise exception 'menu_not_found'; end if;
     dur := dur + svc.duration_min * n;
     sub := sub + svc.price * n;
+    people := people + n;
     items_out := items_out || jsonb_build_object('id', svc.id, 'name', svc.name, 'price', svc.price, 'n', n);
   end loop;
 
@@ -229,14 +245,25 @@ begin
     raise exception 'slot_taken';
   end if;
 
+  -- 금액 계산 (lib/pricing.ts 와 같은 규칙)
+  select coalesce(max((t->>'fee')::int), 0) into early
+    from jsonb_array_elements(coalesce(s.early_fees, '[]'::jsonb)) t where p_start < (t->>'before')::int;
+  if s.weekday_discount_pct > 0 and extract(isodow from p_date) between 1 and 5 then
+    disc := disc + floor(sub * s.weekday_discount_pct / 100.0 / 1000) * 1000;
+  end if;
+  if s.group_min > 0 and people >= s.group_min then disc := disc + s.group_discount * people; end if;
+  disc := least(disc, sub);
+  tot := sub - disc + coalesce(fee, 0) + early;
+  dep := case when s.deposit_pct > 0 then greatest(s.deposit, (floor(tot * s.deposit_pct / 100.0 / 1000) * 1000)::int) else s.deposit end;
+
   new_code := 'R' || to_char(now_seoul, 'MMDD') || '-' || upper(substr(md5(gen_random_uuid()::text), 1, 4));
   insert into bookings (code, name, phone, items, region, region_name, address, event_note, date, start_min,
-                        duration_min, subtotal, travel_fee, total, deposit, memo)
+                        duration_min, subtotal, travel_fee, total, deposit, memo, early_fee, discount)
   values (new_code, p_name, p_phone, items_out, p_region, region_name, p_address, left(coalesce(p_event_note, ''), 100),
-          p_date, p_start, dur, sub, fee, sub + coalesce(fee, 0), s.deposit, left(coalesce(p_memo, ''), 500));
+          p_date, p_start, dur, sub, fee, tot, dep, left(coalesce(p_memo, ''), 500), early, disc);
 
   return json_build_object('code', new_code, 'items', items_out, 'subtotal', sub, 'travel_fee', fee,
-                           'total', sub + coalesce(fee, 0), 'deposit', s.deposit, 'duration', dur,
+                           'total', tot, 'deposit', dep, 'duration', dur, 'early_fee', early, 'discount', disc,
                            'region_name', region_name);
 end;
 $$;

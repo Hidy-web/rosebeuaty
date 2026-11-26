@@ -92,7 +92,7 @@ export default function BookingsTab({ data, reload, toast, onPending }: TabProps
             </div>
           </div>
           {filter === "pending" && pend.length > 0 && (
-            <p className="note">통장에 입금자명과 예약금({won(st.deposit)})이 들어왔는지 확인한 뒤 확정을 눌러 주세요.</p>
+            <p className="note">통장에 입금자명과 예약금이 들어왔는지 확인한 뒤 확정을 눌러 주세요.</p>
           )}
           <div>
             {list.length === 0 && <div className="empty">해당하는 예약이 없어요.</div>}
@@ -113,7 +113,9 @@ export default function BookingsTab({ data, reload, toast, onPending }: TabProps
                       {b.memo && ` · “${b.memo}”`}
                     </div>
                     <div className="money num">
-                      총 {won(b.total)}{b.travel_fee == null ? " + 출장비" : ""} · 잔금 {won(b.total - b.deposit)}
+                      총 {won(b.total)}{b.travel_fee == null ? " + 출장비" : ""} · 예약금 {won(b.deposit)} · 잔금 {won(b.total - b.deposit)}
+                      {(b.early_fee ?? 0) > 0 && <> · 이른 시간 +{won(b.early_fee!)}</>}
+                      {(b.discount ?? 0) > 0 && <> · 할인 −{won(b.discount!)}</>}
                     </div>
                   </div>
                   <div className="muted num" style={{ fontSize: ".8rem", textAlign: "right" }}>{b.code}</div>

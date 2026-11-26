@@ -264,3 +264,13 @@ button{cursor:pointer}
 .extra-notice{background:var(--sunk);border-radius:10px;padding:10px 14px;font-size:.85rem;margin:12px 0}
 .extra-notice ul{margin:4px 0 0;padding-left:1.1em}
 .extra-notice li{margin:2px 0}
+/* 할인·할증·환불 */
+.summary .disc{color:var(--sage)}
+.slot{display:grid;line-height:1.15}
+.slot-fee{font-size:.65rem;color:var(--amber)}
+.slot[aria-pressed="true"] .slot-fee{color:inherit}
+.promise{font-size:.9rem;color:var(--accent);font-weight:500;margin:6px 0 0}
+.policy-list{margin:0;padding-left:1.1em;font-size:.82rem;line-height:1.6}
+.refund{font-size:.85rem;margin:8px 0}
+.refund summary{cursor:pointer;color:var(--accent);font-weight:500}
+.refund ul{padding-left:1.1em;line-height:1.6}

@@ -17,6 +17,14 @@ export type Settings = {
   privacy_contact?: string;
   /** 추가 비용 안내 (주차비, 가발·속눈썹 등). 한 줄에 하나 */
   extra_notice?: string;
+  /** 이른 시간 할증: before(분) 이전 시작이면 fee 원 (방문 1회당, 해당하는 것 중 가장 큰 금액) */
+  early_fees?: { before: number; fee: number }[];
+  weekday_discount_pct?: number;
+  group_min?: number;
+  group_discount?: number;
+  deposit_pct?: number;
+  refund_policy?: string;
+  promise?: string;
   open_min: number;
   close_min: number;
   buffer_min: number;
@@ -76,6 +84,8 @@ export type Booking = {
   travel_fee: number | null;
   total: number;
   deposit: number;
+  early_fee?: number;
+  discount?: number;
   status: "pending" | "confirmed" | "done" | "canceled";
   memo: string;
   created_at: string;
