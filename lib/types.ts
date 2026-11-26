@@ -89,6 +89,8 @@ export type Booking = {
   early_fee?: number;
   discount?: number;
   review_token?: string | null;
+  /** online: 손님 예약, manual: 관리자가 직접 넣은 예약, block: 개인 일정(시간 막기) */
+  kind?: "online" | "manual" | "block";
   status: "pending" | "confirmed" | "done" | "canceled";
   memo: string;
   created_at: string;

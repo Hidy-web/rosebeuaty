@@ -16,10 +16,22 @@ alter table settings add column if not exists kakaopay_url text not null default
 alter table bookings add column if not exists early_fee int not null default 0;
 alter table bookings add column if not exists discount int not null default 0;
 alter table bookings add column if not exists review_token text unique default replace(gen_random_uuid()::text, '-', '');
+alter table bookings add column if not exists kind text not null default 'online' check (kind in ('online', 'manual', 'block'));
 
 alter table reviews add column if not exists booking_id uuid unique references bookings(id) on delete set null;
 drop policy if exists "reviews public insert" on reviews;
 revoke insert on public.reviews from anon;
+
+-- 관리자는 예약을 보고 고칠 수 있어요. 완전 삭제는 취소된 예약과 개인 일정만 돼요.
+drop policy if exists "bookings admin all" on bookings;
+drop policy if exists "bookings admin select" on bookings;
+create policy "bookings admin select" on bookings for select using (is_admin());
+drop policy if exists "bookings admin insert" on bookings;
+create policy "bookings admin insert" on bookings for insert with check (is_admin());
+drop policy if exists "bookings admin update" on bookings;
+create policy "bookings admin update" on bookings for update using (is_admin()) with check (is_admin());
+drop policy if exists "bookings admin delete" on bookings;
+create policy "bookings admin delete" on bookings for delete using (is_admin() and (status = 'canceled' or kind = 'block'));
 
 create or replace function purge_expired_bookings()
 returns int
