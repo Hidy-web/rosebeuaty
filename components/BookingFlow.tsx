@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { bookingErrorText, sb } from "@/lib/supabase";
 import { DOW, addDays, dLabel, dow, hm, seoulNow, won } from "@/lib/time";
 import type { ShopData } from "./useShopData";
+import { ConsentSummary } from "./PrivacyPolicy";
 
 type Busy = { date: string; start_min: number; end_min: number };
 type Made = {
@@ -61,6 +62,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
   const [finder, setFinder] = useState<"closed" | "loading" | "open" | "failed">("closed");
   const finderEl = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
+  const [agree, setAgree] = useState(false);
   const [made, setMade] = useState<{ res: Made; date: string; start: number; deadline: Date } | null>(null);
 
   const now = seoulNow();
@@ -149,6 +151,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
     if (!address) return toast("방문 주소를 입력해 주세요");
     if (!form.name.trim()) return toast("예약자 이름을 입력해 주세요");
     if (!/^01[0-9]-?\d{3,4}-?\d{4}$/.test(form.phone.trim())) return toast("연락처를 010-0000-0000 형식으로 입력해 주세요");
+    if (!agree) return toast("개인정보 수집·이용에 동의해 주세요");
     if (!date || start === null) return;
     setSaving(true);
     const { data: res, error } = await sb().rpc("create_booking", {
@@ -382,6 +385,17 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
           <div className="field">
             <label htmlFor="g-memo">요청사항 (선택)</label>
             <textarea id="g-memo" value={form.memo} maxLength={500} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="한복 착용 여부, 원하는 스타일, 주차 안내 등" />
+          </div>
+          <div className="consent">
+            <label className="consent-check">
+              <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
+              <span><b>[필수]</b> 예약을 위한 개인정보 수집·이용에 동의해요</span>
+            </label>
+            <ConsentSummary months={st.retention_months ?? 12} />
+            <p className="note">
+              동의하지 않으실 수 있지만, 그 경우 온라인 예약은 할 수 없어요. 자세한 내용은{" "}
+              <a href="/privacy" target="_blank" rel="noopener">개인정보 처리방침</a>에서 볼 수 있어요.
+            </p>
           </div>
           <Summary withTime />
           <p className="callout">

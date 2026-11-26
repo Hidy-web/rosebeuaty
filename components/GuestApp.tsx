@@ -140,7 +140,7 @@ export default function GuestApp() {
         </div>
       </div>
       <p className="footer">
-        {st.shop_name} · <a href="/admin">관리자</a>
+        {st.shop_name} · <a href="/privacy"><b>개인정보 처리방침</b></a> · <a href="/admin">관리자</a>
       </p>
       <Toast msg={toast.msg} />
     </div>
@@ -223,6 +223,10 @@ function ReviewsTab({ reviews, avg, onPosted, toast }: { reviews: import("@/lib/
             {busy ? "등록 중…" : "리뷰 등록"}
           </button>
         </div>
+        <p className="note">
+          이름은 첫 글자만 남기고 가려서 저장돼요. 리뷰는 누구나 볼 수 있으니 연락처나 주소는 적지 말아 주세요.{" "}
+          <a href="/privacy">개인정보 처리방침</a>
+        </p>
       </div>
     </div>
   );

@@ -89,6 +89,14 @@ function Dashboard({ email }: { email: string }) {
   const [tab, setTab] = useState<Tab>("bookings");
   const [pending, setPending] = useState(0);
 
+  // 보관 기간이 지난 예약의 개인정보를 자동으로 지워요.
+  useEffect(() => {
+    sb().rpc("purge_expired_bookings").then(({ data: n }) => {
+      if (typeof n === "number" && n > 0) toast.show(`보관 기간이 지난 예약 ${n}건의 개인정보를 지웠어요`);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (!data) return <Loading error={error} onRetry={reload} />;
   const tabs: [Tab, string][] = [
     ["bookings", "예약·일정"],

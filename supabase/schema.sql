@@ -37,6 +37,10 @@ create table if not exists settings (
 insert into settings (id) values (1) on conflict do nothing;
 -- 행사일 며칠 전까지 예약금을 입금해야 확정되는지 (나중에 추가된 칸)
 alter table settings add column if not exists confirm_days int not null default 3 check (confirm_days between 0 and 30);
+-- 개인정보 보관 기간(개월)과 보호책임자 (나중에 추가된 칸)
+alter table settings add column if not exists retention_months int not null default 12 check (retention_months between 1 and 60);
+alter table settings add column if not exists privacy_officer text not null default '';
+alter table settings add column if not exists privacy_contact text not null default '';
 alter table settings enable row level security;
 drop policy if exists "settings public read" on settings;
 create policy "settings public read" on settings for select using (true);
@@ -246,6 +250,27 @@ language sql stable security definer set search_path = public as $$
   limit 1;
 $$;
 grant execute on function lookup_booking(text, text) to anon, authenticated;
+
+-- 보관 기간이 지난 예약의 개인정보를 지워요. 관리자 화면을 열 때마다 자동으로 실행돼요.
+-- 날짜·메뉴·금액은 매출 확인용으로 남기고 이름·연락처·주소·행사 정보·요청사항만 지워요.
+create or replace function purge_expired_bookings()
+returns int
+language plpgsql security definer set search_path = public as $$
+declare
+  keep_months int;
+  n int;
+begin
+  if not is_admin() then raise exception 'not_admin'; end if;
+  select coalesce(retention_months, 12) into keep_months from settings where id = 1;
+  update bookings
+     set name = '(파기됨)', phone = '', address = '', event_note = '', memo = ''
+   where date < (now() at time zone 'Asia/Seoul')::date - make_interval(months => keep_months)
+     and (phone <> '' or address <> '' or name <> '(파기됨)');
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke execute on function purge_expired_bookings() from public, anon;
+grant execute on function purge_expired_bookings() to authenticated;
 
 -- ───────── 기본 메뉴 (관리자 화면에서 고칠 수 있어요) ─────────
 do $$

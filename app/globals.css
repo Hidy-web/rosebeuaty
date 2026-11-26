@@ -241,3 +241,16 @@ button{cursor:pointer}
 .finder-bar{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 8px 6px 12px;font-size:.8rem;border-bottom:1px solid var(--line)}
 .finder-box{height:440px;max-height:70vh}
 @media (max-width:480px){.day small{display:block;font-size:.6rem}}
+/* 개인정보 */
+.consent{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--surface);display:grid;gap:10px}
+.consent-check{display:flex;gap:10px;align-items:flex-start;font-size:.95rem;cursor:pointer}
+.consent-check input{width:20px;height:20px;margin:1px 0 0;accent-color:var(--accent);flex-shrink:0}
+.consent-table{width:100%;border-collapse:collapse;font-size:.8rem}
+.consent-table th,.consent-table td{border-top:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+.consent-table th{color:var(--muted);font-weight:500;white-space:nowrap;width:1%}
+.consent-table thead th{width:auto;border-top:0}
+.policy{max-width:720px;margin:0 auto;line-height:1.7}
+.policy h1{font-family:var(--display);font-size:1.6rem;margin-bottom:8px}
+.policy h2{font-size:1.05rem;margin:28px 0 8px}
+.policy ul{padding-left:1.2em}
+.policy .consent-table{font-size:.85rem;margin:8px 0}

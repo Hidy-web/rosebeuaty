@@ -11,6 +11,10 @@ export type Settings = {
   deadline_hours: number;
   /** 행사일 며칠 전까지 입금해야 확정되는지. 0이면 안내 안 함 */
   confirm_days?: number;
+  /** 예약 개인정보 보관 기간(개월) */
+  retention_months?: number;
+  privacy_officer?: string;
+  privacy_contact?: string;
   open_min: number;
   close_min: number;
   buffer_min: number;

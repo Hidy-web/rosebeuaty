@@ -22,7 +22,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
     void _id; void _c;
     const { error } = await sb().from("settings").update({ ...patch, regions: s.regions.map((r) => ({ ...r, name: r.name.trim() })) }).eq("id", 1);
     setSaving(false);
-    if (error) return toast(/confirm_days/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
+    if (error) return toast(/confirm_days|retention_months|privacy_/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
     toast("설정을 저장했어요");
     reload();
   }
@@ -44,6 +44,13 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
         <div className="field"><label htmlFor="s-dep">예약금 (원)</label><input id="s-dep" type="number" min={0} step={1000} value={s.deposit} onChange={(e) => set("deposit", Math.max(0, Number(e.target.value) || 0))} /></div>
         <div className="field"><label htmlFor="s-dl">입금 기한 (시간)</label><input id="s-dl" type="number" min={1} max={72} value={s.deadline_hours} onChange={(e) => set("deadline_hours", Math.min(72, Math.max(1, Number(e.target.value) || 1)))} /></div>
         <div className="field"><label htmlFor="s-cd">행사일 며칠 전까지 확정 (일)</label><input id="s-cd" type="number" min={0} max={30} value={s.confirm_days ?? 3} onChange={(e) => set("confirm_days", Math.min(30, Math.max(0, Number(e.target.value) || 0)))} /></div>
+      </div>
+      <h3>개인정보</h3>
+      <p className="note">손님 화면 아래 &ldquo;개인정보 처리방침&rdquo;에 그대로 보여요. 보관 기간이 지난 예약은 관리자 화면을 열 때 이름·연락처·주소가 자동으로 지워져요.</p>
+      <div className="settings">
+        <div className="field"><label htmlFor="s-ret">예약 정보 보관 기간 (행사일로부터, 개월)</label><input id="s-ret" type="number" min={1} max={60} value={s.retention_months ?? 12} onChange={(e) => set("retention_months", Math.min(60, Math.max(1, Number(e.target.value) || 1)))} /></div>
+        <div className="field"><label htmlFor="s-po">개인정보 보호책임자</label><input id="s-po" value={s.privacy_officer ?? ""} onChange={(e) => set("privacy_officer", e.target.value)} placeholder="예: 대표 홍길동" /></div>
+        <div className="field"><label htmlFor="s-pc">문의 연락처</label><input id="s-pc" value={s.privacy_contact ?? ""} onChange={(e) => set("privacy_contact", e.target.value)} placeholder="예: 010-0000-0000 또는 이메일" /></div>
       </div>
       <h3>방문 시간</h3>
       <div className="settings">
