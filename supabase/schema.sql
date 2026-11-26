@@ -269,3 +269,12 @@ begin
     insert into portfolio_categories (name, sort) values ('돌잔치', 1), ('하객', 2), ('촬영', 3);
   end if;
 end $$;
+
+-- ── 권한 (새 Supabase 프로젝트는 테이블 권한이 자동으로 주어지지 않아요) ──
+-- 실제로 무엇을 보고 바꿀 수 있는지는 위의 RLS 규칙이 막아요.
+grant usage on schema public to anon, authenticated;
+grant select on all tables in schema public to anon, authenticated;
+grant insert on public.reviews to anon;
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant usage, select on all sequences in schema public to anon, authenticated;
+grant execute on all functions in schema public to anon, authenticated;
