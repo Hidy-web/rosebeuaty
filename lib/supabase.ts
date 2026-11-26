@@ -2,14 +2,18 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 let client: SupabaseClient | null = null;
 
+// Supabase 화면에 따라 키 이름이 ANON_KEY 또는 PUBLISHABLE_KEY 로 나와서 둘 다 받아요.
+const URL_ = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const KEY_ = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
+
 export function isConfigured() {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  return Boolean(URL_ && KEY_);
 }
 
 export function sb(): SupabaseClient {
   if (!client) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const url = URL_;
+    const key = KEY_;
     if (!url || !key) throw new Error("Supabase 환경 변수가 설정되지 않았어요.");
     client = createClient(url, key);
   }
