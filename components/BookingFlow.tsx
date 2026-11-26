@@ -237,7 +237,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
       {step === 1 && (
         <>
           <h2>어떤 메뉴를 몇 분이 받으시나요?</h2>
-          <p className="muted">여러 메뉴를 함께 고를 수 있어요. 예: 엄마 헤어+메이크업 1명, 아이 헤어 1명</p>
+          <p className="muted">여러 메뉴를 함께 고를 수 있어요. 예: 하객 헤어+메이크업 2명, 헤어 1명</p>
           {cats.filter((c) => live(c.id).length).map((c) => (
             <div className="svc-list" key={c.id}>
               <h3>{c.name}</h3>
@@ -372,7 +372,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
           </div>
           <div className="field">
             <label htmlFor="g-event">행사 시작 시간과 종류</label>
-            <input id="g-event" value={form.event} maxLength={100} onChange={(e) => setForm({ ...form, event: e.target.value })} placeholder="예: 12:00 돌잔치" />
+            <input id="g-event" value={form.event} maxLength={100} onChange={(e) => setForm({ ...form, event: e.target.value })} placeholder="예: 12:00 결혼식 하객, 14:00 상견례" />
           </div>
           <div className="field">
             <label htmlFor="g-name">예약자 이름</label>

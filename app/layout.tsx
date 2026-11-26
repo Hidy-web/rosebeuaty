@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "로즈 출장 헤어·메이크업 예약",
-  description: "돌잔치·하객·촬영 출장 헤어메이크업. 원하는 날짜와 시간에 바로 예약하세요.",
+  description: "하객·혼주·상견례·촬영 등 행사 출장 헤어메이크업. 원하는 날짜와 시간에 바로 예약하세요.",
   appleWebApp: { capable: true, title: "로즈 예약", statusBarStyle: "default" },
   icons: { icon: "/icon.svg", apple: "/icon-192.png" },
 };
