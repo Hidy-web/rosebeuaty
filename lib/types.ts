@@ -65,6 +65,10 @@ export type Review = {
   hidden: boolean;
   reply: string;
   created_at: string;
+  /** 리뷰 사진 경로 (review-photos 저장소) */
+  photos?: string[];
+  /** 사진 리뷰 승인 대기 */
+  pending?: boolean;
 };
 
 export type BookingItem = { id: string; name: string; price: number; n: number };

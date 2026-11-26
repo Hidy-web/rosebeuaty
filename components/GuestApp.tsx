@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { imageUrl, reviewErrorText, sb } from "@/lib/supabase";
+import { imageUrl, reviewErrorText, reviewPhotoUrl, sb } from "@/lib/supabase";
+import { compressImage } from "@/lib/image";
 import { STATUS_LABEL, type Booking } from "@/lib/types";
 import { dLabel, hm, won } from "@/lib/time";
 import ExtraNotice from "./ExtraNotice";
@@ -201,6 +202,37 @@ function ReviewsTab({ reviews, avg, onPosted, toast, token, onTokenUsed }: {
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [pics, setPics] = useState<{ blob: Blob; url: string }[]>([]);
+  const [shrinking, setShrinking] = useState(false);
+  const picRef = useRef<HTMLInputElement>(null);
+
+  async function addPics(files: FileList | null) {
+    if (!files?.length) return;
+    const room = 3 - pics.length;
+    if (room <= 0) return setErr("사진은 3장까지 올릴 수 있어요.");
+    setErr("");
+    setShrinking(true);
+    const out: { blob: Blob; url: string }[] = [];
+    for (const f of Array.from(files).slice(0, room)) {
+      if (!f.type.startsWith("image/") && !/\.(heic|heif)$/i.test(f.name)) continue;
+      try {
+        const blob = await compressImage(f);
+        out.push({ blob, url: URL.createObjectURL(blob) });
+      } catch {
+        setErr("열 수 없는 사진이 있어요. 다른 사진을 골라 주세요.");
+      }
+    }
+    setShrinking(false);
+    setPics((p) => [...p, ...out]);
+    if (files.length > room) setErr("사진은 3장까지만 올라가요.");
+    if (picRef.current) picRef.current.value = "";
+  }
+  function removePic(i: number) {
+    setPics((p) => {
+      URL.revokeObjectURL(p[i].url);
+      return p.filter((_, j) => j !== i);
+    });
+  }
 
   async function submit() {
     setErr("");
@@ -210,23 +242,39 @@ function ReviewsTab({ reviews, avg, onPosted, toast, token, onTokenUsed }: {
     }
     if (body.trim().length < 5) return setErr("후기를 5자 이상 적어 주세요.");
     setBusy(true);
-    const { error } = await sb().rpc("submit_review", {
+    // 사진을 먼저 올리고, 올린 경로를 리뷰와 함께 보내요.
+    const paths: string[] = [];
+    for (const p of pics) {
+      const path = `pending/${crypto.randomUUID()}.jpg`;
+      const { error: upErr } = await sb().storage.from("review-photos").upload(path, p.blob, { contentType: "image/jpeg" });
+      if (upErr) {
+        setBusy(false);
+        return setErr("사진을 올리지 못했어요. 잠시 후 다시 시도하거나 사진 없이 등록해 주세요.");
+      }
+      paths.push(path);
+    }
+    const args: Record<string, unknown> = {
       p_token: token || null,
       p_code: token ? null : code.trim() || null,
       p_phone: token ? null : phone,
       p_date: token || code.trim() ? null : date || null,
       p_rating: rating,
       p_body: body,
-    });
+    };
+    if (paths.length) args.p_photos = paths;
+    const { error } = await sb().rpc("submit_review", args);
     setBusy(false);
     if (error) return setErr(reviewErrorText(error.message));
+    const hadPhotos = paths.length > 0;
+    pics.forEach((p) => URL.revokeObjectURL(p.url));
+    setPics([]);
     if (token) onTokenUsed();
     setCode("");
     setDate("");
     setPhone("");
     setBody("");
     setRating(5);
-    toast("리뷰를 등록했어요");
+    toast(hadPhotos ? "리뷰를 등록했어요. 사진 리뷰는 사장님 확인 후 공개돼요" : "리뷰를 등록했어요");
     onPosted();
   }
 
@@ -255,6 +303,16 @@ function ReviewsTab({ reviews, avg, onPosted, toast, token, onTokenUsed }: {
               </span>
             </div>
             <p>{r.body}</p>
+            {(r.photos ?? []).length > 0 && (
+              <div className="rv-photos">
+                {r.photos!.map((ph) => (
+                  <a key={ph} href={reviewPhotoUrl(ph)} target="_blank" rel="noopener noreferrer">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={reviewPhotoUrl(ph)} alt="손님이 올린 사진" loading="lazy" />
+                  </a>
+                ))}
+              </div>
+            )}
             {r.reply && (
               <div className="reply">
                 <b>사장님 답글</b>
@@ -299,6 +357,25 @@ function ReviewsTab({ reviews, avg, onPosted, toast, token, onTokenUsed }: {
         <div className="field">
           <label htmlFor="rv-text">후기</label>
           <textarea id="rv-text" value={body} maxLength={1000} onChange={(e) => setBody(e.target.value)} placeholder="행사 날 어떠셨나요?" />
+        </div>
+        <div className="field">
+          <label>사진 (선택, 3장까지)</label>
+          <div className="rv-pick">
+            {pics.map((p, i) => (
+              <span className="rv-thumb" key={p.url}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={p.url} alt={`고른 사진 ${i + 1}`} />
+                <button type="button" aria-label={`사진 ${i + 1} 빼기`} onClick={() => removePic(i)}>×</button>
+              </span>
+            ))}
+            {pics.length < 3 && (
+              <button type="button" className="rv-add" onClick={() => picRef.current?.click()} disabled={shrinking}>
+                {shrinking ? "줄이는 중…" : "+ 사진"}
+              </button>
+            )}
+          </div>
+          <input ref={picRef} type="file" accept="image/*" multiple hidden onChange={(e) => addPics(e.target.files)} />
+          <p className="note" style={{ margin: 0 }}>사진은 자동으로 작게 줄여서 올라가요. 사진이 있는 리뷰는 사장님 확인 후 공개돼요.</p>
         </div>
         {err && <p className="err" style={{ margin: 0 }}>{err}</p>}
         <div>

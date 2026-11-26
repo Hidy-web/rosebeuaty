@@ -294,3 +294,12 @@ input,select,textarea{font-size:16px}
 .pill.st-manual{background:var(--accent-soft);color:var(--accent);margin-left:4px}
 .tl-ev.block{background:var(--sunk);color:var(--muted);border-color:var(--line)}
 .btn.danger.solid{background:var(--red);color:#fff;border-color:var(--red)}
+/* 리뷰 사진 */
+.rv-photos{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.rv-photos img{width:84px;height:84px;object-fit:cover;border-radius:10px;border:1px solid var(--line);display:block}
+.rv-pick{display:flex;gap:8px;flex-wrap:wrap}
+.rv-thumb{position:relative}
+.rv-thumb img{width:72px;height:72px;object-fit:cover;border-radius:10px;display:block;border:1px solid var(--line)}
+.rv-thumb button{position:absolute;top:-6px;right:-6px;width:24px;height:24px;border-radius:50%;border:0;background:var(--ink);color:var(--bg);font-size:.9rem;line-height:1;padding:0}
+.rv-add{width:72px;height:72px;border-radius:10px;border:1px dashed var(--line);background:var(--surface);color:var(--muted);font-size:.85rem}
+.rv-thumb .rv-confirm{width:auto;height:24px;padding:0 8px;border-radius:12px;background:var(--danger,#c0392b);color:#fff;font-size:.75rem}

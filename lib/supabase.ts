@@ -20,6 +20,10 @@ export function sb(): SupabaseClient {
   return client;
 }
 
+export function reviewPhotoUrl(path: string) {
+  return sb().storage.from("review-photos").getPublicUrl(path).data.publicUrl;
+}
+
 export function imageUrl(path: string) {
   return sb().storage.from("portfolio").getPublicUrl(path).data.publicUrl;
 }
@@ -50,6 +54,7 @@ export function reviewErrorText(message: string) {
     already_reviewed: "이 예약으로는 이미 리뷰를 쓰셨어요.",
     invalid_rating: "별점을 골라 주세요.",
     invalid_body: "후기를 5자 이상 적어 주세요.",
+    invalid_photos: "사진을 다시 골라 주세요. (최대 3장)",
   };
   for (const k of Object.keys(map)) if (message.includes(k)) return map[k];
   return "리뷰를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.";

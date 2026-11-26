@@ -19,8 +19,21 @@ alter table bookings add column if not exists review_token text unique default r
 alter table bookings add column if not exists kind text not null default 'online' check (kind in ('online', 'manual', 'block'));
 
 alter table reviews add column if not exists booking_id uuid unique references bookings(id) on delete set null;
+alter table reviews add column if not exists photos text[] not null default '{}';
+alter table reviews add column if not exists pending boolean not null default false;
 drop policy if exists "reviews public insert" on reviews;
 revoke insert on public.reviews from anon;
+
+-- REVIEW_PHOTOS_START
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('review-photos', 'review-photos', true, 409600, array['image/jpeg'])
+on conflict (id) do update set public = true, file_size_limit = 409600, allowed_mime_types = array['image/jpeg'];
+drop policy if exists "review photos upload" on storage.objects;
+create policy "review photos upload" on storage.objects for insert to anon, authenticated
+  with check (bucket_id = 'review-photos' and name ~ '^pending/[0-9a-f-]{36}\.jpg$');
+drop policy if exists "review photos admin delete" on storage.objects;
+create policy "review photos admin delete" on storage.objects for delete to authenticated using (bucket_id = 'review-photos' and is_admin());
+-- REVIEW_PHOTOS_END
 
 -- 관리자는 예약을 보고 고칠 수 있어요. 완전 삭제는 취소된 예약과 개인 일정만 돼요.
 drop policy if exists "bookings admin all" on bookings;
@@ -53,7 +66,8 @@ revoke execute on function purge_expired_bookings() from public, anon;
 grant execute on function purge_expired_bookings() to authenticated;
 
 drop function if exists submit_review(text, text, int, text);
-create or replace function submit_review(p_token text, p_code text, p_phone text, p_date date, p_rating int, p_body text)
+drop function if exists submit_review(text, text, text, date, int, text);
+create or replace function submit_review(p_token text, p_code text, p_phone text, p_date date, p_rating int, p_body text, p_photos text[] default '{}')
 returns void
 language plpgsql security definer set search_path = public as $$
 declare
@@ -65,6 +79,13 @@ declare
 begin
   if p_rating is null or p_rating not between 1 and 5 then raise exception 'invalid_rating'; end if;
   if char_length(btrim(coalesce(p_body, ''))) < 5 then raise exception 'invalid_body'; end if;
+  p_photos := coalesce(p_photos, '{}');
+  if cardinality(p_photos) > 3 then raise exception 'invalid_photos'; end if;
+  if exists (select 1 from unnest(p_photos) ph where ph !~ '^pending/[0-9a-f-]{36}\.jpg$'
+               or not exists (select 1 from storage.objects o where o.bucket_id = 'review-photos' and o.name = ph)
+               or exists (select 1 from reviews r where ph = any (r.photos))) then
+    raise exception 'invalid_photos';
+  end if;
 
   if coalesce(btrim(p_token), '') <> '' then
     select * into b from bookings where review_token = btrim(p_token) for update;
@@ -88,10 +109,12 @@ begin
   if b.status not in ('confirmed', 'done') or b.date > today then raise exception 'review_not_yet'; end if;
   if exists (select 1 from reviews where booking_id = b.id) then raise exception 'already_reviewed'; end if;
   select left(string_agg(i->>'name', ', '), 60) into label from jsonb_array_elements(b.items) i;
-  insert into reviews (name, rating, service_label, body, booking_id)
-  values (left(btrim(b.name), 1) || '*', p_rating, coalesce(label, ''), left(btrim(p_body), 1000), b.id);
+  -- 사진이 있으면 관리자가 승인할 때까지 숨겨 둬요.
+  insert into reviews (name, rating, service_label, body, booking_id, photos, hidden, pending)
+  values (left(btrim(b.name), 1) || '*', p_rating, coalesce(label, ''), left(btrim(p_body), 1000), b.id,
+          p_photos, cardinality(p_photos) > 0, cardinality(p_photos) > 0);
 end $$;
-grant execute on function submit_review(text, text, text, date, int, text) to anon, authenticated;
+grant execute on function submit_review(text, text, text, date, int, text, text[]) to anon, authenticated;
 
 create or replace function create_booking(
   p_name text, p_phone text, p_items jsonb, p_region text, p_address text,
