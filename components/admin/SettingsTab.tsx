@@ -70,6 +70,35 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
         <button className="btn sm ghost" onClick={() => set("regions", [...s.regions, { id: "r" + Date.now().toString(36), name: "", fee: 0 }])}>+ 지역 추가</button>
       </div>
       <div><button className="btn" disabled={saving} onClick={save}>{saving ? "저장 중…" : "저장"}</button></div>
+      <PasswordBox toast={toast} />
     </section>
+  );
+}
+
+function PasswordBox({ toast }: { toast: (m: string) => void }) {
+  const [pw, setPw] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function change() {
+    if (pw.length < 8) return toast("비밀번호는 8자 이상으로 해 주세요");
+    if (pw !== pw2) return toast("두 칸의 비밀번호가 달라요");
+    setBusy(true);
+    const { error } = await sb().auth.updateUser({ password: pw });
+    setBusy(false);
+    if (error) return toast(/different|same/i.test(error.message) ? "지금 비밀번호와 다른 비밀번호를 넣어 주세요" : "비밀번호를 바꾸지 못했어요. 다시 로그인한 뒤 시도해 주세요");
+    setPw(""); setPw2("");
+    toast("비밀번호를 바꿨어요. 다음 로그인부터 새 비밀번호를 쓰세요");
+  }
+
+  return (
+    <>
+      <h3>관리자 비밀번호 바꾸기</h3>
+      <div className="settings">
+        <div className="field"><label htmlFor="s-pw">새 비밀번호</label><input id="s-pw" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></div>
+        <div className="field"><label htmlFor="s-pw2">새 비밀번호 한 번 더</label><input id="s-pw2" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>
+      </div>
+      <div><button className="btn ghost" disabled={busy || !pw} onClick={change}>{busy ? "바꾸는 중…" : "비밀번호 바꾸기"}</button></div>
+    </>
   );
 }
