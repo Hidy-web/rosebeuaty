@@ -56,7 +56,7 @@ export default function GuestApp() {
   return (
     <div className="guest">
       <section className="hero">
-        <p className="eyebrow">하객 · 혼주 · 행사 · 촬영 출장 헤어메이크업</p>
+        <p className="eyebrow">혼주 · 하객 · 행사 출장 헤어메이크업</p>
         <h1>{st.tagline}</h1>
         <div className="meta">
           <span>{st.regions.filter((r) => r.fee !== null).map((r) => r.name).join("·")} 출장</span>

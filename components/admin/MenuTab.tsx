@@ -52,6 +52,27 @@ export default function MenuTab({ data, reload, toast }: TabProps) {
     await reload();
   }
 
+  // 순서 바꾸기: 옆 항목과 자리를 바꾼 뒤 1, 2, 3… 으로 다시 매겨요.
+  async function move(table: "services" | "service_categories", list: { id: string; sort: number }[], i: number, d: -1 | 1) {
+    const j = i + d;
+    if (j < 0 || j >= list.length) return;
+    const arr = [...list];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    const c = sb();
+    const results = await Promise.all(
+      arr.map((x, k) => (x.sort !== k + 1 ? c.from(table).update({ sort: k + 1 }).eq("id", x.id) : Promise.resolve({ error: null })))
+    );
+    if (results.some((r) => r.error)) toast("순서를 바꾸지 못했어요. 다시 시도해 주세요");
+    await reload();
+  }
+
+  async function renameCat(cid: string, old: string, name: string) {
+    const v = name.trim();
+    if (!v || v === old) return;
+    if (cats.some((c) => c.id !== cid && c.name === v)) return toast("이미 있는 분류예요");
+    await run(sb().from("service_categories").update({ name: v }).eq("id", cid), `분류 이름을 ${v}(으)로 바꿨어요`);
+  }
+
   async function delCat(cid: string, name: string) {
     // 기존 예약 기록이 메뉴 이름을 따로 저장하고 있어서, 메뉴는 숨김 처리만 해요.
     const c = sb();
@@ -65,16 +86,19 @@ export default function MenuTab({ data, reload, toast }: TabProps) {
     <section className="panel">
       <h2>메뉴 가격</h2>
       <p className="note">
-        분류 옆 <b>+</b>로 메뉴를 추가하고 <b>−</b>로 분류를 지워요. 이름이나 금액을 고치고 칸 밖을 누르면 저장돼요.
+        분류 옆 <b>+</b>로 메뉴를 추가하고 <b>−</b>로 분류를 지워요. <b>↑ ↓</b>로 손님 화면에 보이는 순서를 바꿔요. 이름이나 금액을 고치고 칸 밖을 누르면 저장돼요.
       </p>
-      {cats.map((c) => {
+      {cats.map((c, ci) => {
         const L = live(c.id);
         const delKey = "cat:" + c.id;
         return (
           <div className="price-group" key={c.id}>
             <div className="cat-head">
-              <h3>{c.name}</h3>
+              <input className="cat-name" defaultValue={c.name} key={c.name} aria-label="분류 이름" maxLength={30}
+                onBlur={(e) => renameCat(c.id, c.name, e.target.value)} />
               <span className="cat-btns">
+                <button className="icon-btn" title="분류 위로" aria-label={`${c.name} 분류 위로`} disabled={ci === 0} onClick={() => move("service_categories", cats, ci, -1)}>↑</button>
+                <button className="icon-btn" title="분류 아래로" aria-label={`${c.name} 분류 아래로`} disabled={ci === cats.length - 1} onClick={() => move("service_categories", cats, ci, 1)}>↓</button>
                 <button className="icon-btn" title="메뉴 추가" aria-label={`${c.name}에 메뉴 추가`}
                   onClick={() => { setAddIn(addIn === c.id ? null : c.id); setNs({ name: "", price: "", dur: "60" }); }}>+</button>
                 {delId === delKey ? (
@@ -113,8 +137,12 @@ export default function MenuTab({ data, reload, toast }: TabProps) {
             {L.length === 0 && addIn !== c.id && (
               <div className="empty" style={{ padding: "12px 0", textAlign: "left" }}>메뉴가 없어요. + 를 눌러 추가하세요. 메뉴가 없는 분류는 손님 화면에 보이지 않아요.</div>
             )}
-            {L.map((s) => (
+            {L.map((s, si) => (
               <div className="price-row svc-edit" key={s.id}>
+                <span className="order-btns">
+                  <button className="icon-btn sm" aria-label={`${s.name} 위로`} disabled={si === 0} onClick={() => move("services", L, si, -1)}>↑</button>
+                  <button className="icon-btn sm" aria-label={`${s.name} 아래로`} disabled={si === L.length - 1} onClick={() => move("services", L, si, 1)}>↓</button>
+                </span>
                 <input className="sname" defaultValue={s.name} aria-label="메뉴 이름" maxLength={60}
                   onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) saveField(s, { name: v }, "메뉴 이름을 바꿨어요"); }} />
                 <span className="pinput">
