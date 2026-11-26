@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useState } from "react";
-import { imageUrl, sb } from "@/lib/supabase";
+import { imageUrl, reviewErrorText, sb } from "@/lib/supabase";
 import { STATUS_LABEL, type Booking } from "@/lib/types";
 import { dLabel, hm, won } from "@/lib/time";
 import { Loading, Toast, useShopData, useToast } from "./useShopData";
@@ -149,18 +149,22 @@ export default function GuestApp() {
 
 function ReviewsTab({ reviews, avg, onPosted, toast }: { reviews: import("@/lib/types").Review[]; avg: number; onPosted: () => void; toast: (m: string) => void }) {
   const [rating, setRating] = useState(5);
-  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [phone, setPhone] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
   async function submit() {
-    if (!name.trim() || !body.trim()) return toast("이름과 후기를 입력해 주세요");
+    setErr("");
+    if (!code.trim() || !phone.trim()) return setErr("예약번호와 연락처를 입력해 주세요.");
+    if (body.trim().length < 5) return setErr("후기를 5자 이상 적어 주세요.");
     setBusy(true);
-    const masked = name.trim().slice(0, 1) + "*";
-    const { error } = await sb().from("reviews").insert({ name: masked, rating, body: body.trim().slice(0, 1000), service_label: "출장 헤어메이크업" });
+    const { error } = await sb().rpc("submit_review", { p_code: code, p_phone: phone, p_rating: rating, p_body: body });
     setBusy(false);
-    if (error) return toast("리뷰를 등록하지 못했어요. 잠시 후 다시 시도해 주세요");
-    setName("");
+    if (error) return setErr(reviewErrorText(error.message));
+    setCode("");
+    setPhone("");
     setBody("");
     setRating(5);
     toast("리뷰를 등록했어요");
@@ -203,6 +207,15 @@ function ReviewsTab({ reviews, avg, onPosted, toast }: { reviews: import("@/lib/
       </div>
       <div className="card" style={{ display: "grid", gap: 12 }}>
         <h3>리뷰 쓰기</h3>
+        <p className="muted" style={{ fontSize: ".85rem", margin: 0 }}>예약하고 방문을 받으신 손님만 쓸 수 있어요. 예약번호와 연락처를 넣어 주세요. (예약당 한 번)</p>
+        <div className="field">
+          <label htmlFor="rv-code">예약번호</label>
+          <input id="rv-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="예: R1126-AB12" autoCapitalize="characters" />
+        </div>
+        <div className="field">
+          <label htmlFor="rv-phone">연락처</label>
+          <input id="rv-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="010-0000-0000" inputMode="tel" autoComplete="tel" />
+        </div>
         <div className="star-pick" role="group" aria-label="별점">
           {[1, 2, 3, 4, 5].map((n) => (
             <button key={n} className={n <= rating ? "on" : ""} aria-label={`${n}점`} onClick={() => setRating(n)}>
@@ -211,20 +224,17 @@ function ReviewsTab({ reviews, avg, onPosted, toast }: { reviews: import("@/lib/
           ))}
         </div>
         <div className="field">
-          <label htmlFor="rv-name">이름</label>
-          <input id="rv-name" value={name} maxLength={20} onChange={(e) => setName(e.target.value)} placeholder="예: 김지수 (첫 글자만 보여요)" />
-        </div>
-        <div className="field">
           <label htmlFor="rv-text">후기</label>
           <textarea id="rv-text" value={body} maxLength={1000} onChange={(e) => setBody(e.target.value)} placeholder="행사 날 어떠셨나요?" />
         </div>
+        {err && <p className="err" style={{ margin: 0 }}>{err}</p>}
         <div>
           <button className="btn" disabled={busy} onClick={submit}>
             {busy ? "등록 중…" : "리뷰 등록"}
           </button>
         </div>
         <p className="note">
-          이름은 첫 글자만 남기고 가려서 저장돼요. 리뷰는 누구나 볼 수 있으니 연락처나 주소는 적지 말아 주세요.{" "}
+          이름은 예약자 이름의 첫 글자만 보여요. 리뷰는 누구나 볼 수 있으니 연락처나 주소는 적지 말아 주세요.{" "}
           <a href="/privacy">개인정보 처리방침</a>
         </p>
       </div>

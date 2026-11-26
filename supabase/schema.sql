@@ -120,8 +120,8 @@ create table if not exists reviews (
 alter table reviews enable row level security;
 drop policy if exists "reviews public read visible" on reviews;
 create policy "reviews public read visible" on reviews for select using (not hidden or is_admin());
+-- 리뷰는 아래 submit_review 함수로만 써요. (예약번호·연락처가 맞는 실제 손님만, 예약당 한 번)
 drop policy if exists "reviews public insert" on reviews;
-create policy "reviews public insert" on reviews for insert with check (not hidden and reply = '');
 drop policy if exists "reviews admin update" on reviews;
 create policy "reviews admin update" on reviews for update using (is_admin()) with check (is_admin());
 drop policy if exists "reviews admin delete" on reviews;
@@ -150,6 +150,8 @@ create table if not exists bookings (
   created_at timestamptz not null default now()
 );
 create index if not exists bookings_date_idx on bookings (date);
+-- 어느 예약의 리뷰인지 (예약당 리뷰 한 개)
+alter table reviews add column if not exists booking_id uuid unique references bookings(id) on delete set null;
 alter table bookings enable row level security;
 -- 손님은 예약 목록을 직접 볼 수 없어요. 예약은 아래 함수로만 만들어요.
 drop policy if exists "bookings admin all" on bookings;
@@ -251,6 +253,31 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function lookup_booking(text, text) to anon, authenticated;
 
+-- 실제 손님만 리뷰를 써요: 예약번호와 연락처가 맞고, 확정·완료된 예약의 방문일이 지났고, 아직 리뷰가 없을 때.
+create or replace function submit_review(p_code text, p_phone text, p_rating int, p_body text)
+returns void
+language plpgsql security definer set search_path = public as $$
+declare
+  b bookings;
+  today date := (now() at time zone 'Asia/Seoul')::date;
+  label text;
+begin
+  if p_rating is null or p_rating not between 1 and 5 then raise exception 'invalid_rating'; end if;
+  if char_length(btrim(coalesce(p_body, ''))) < 5 then raise exception 'invalid_body'; end if;
+  select * into b from bookings
+   where code = upper(btrim(coalesce(p_code, '')))
+     and phone <> ''
+     and regexp_replace(phone, '[^0-9]', '', 'g') = regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g')
+   for update;
+  if not found then raise exception 'review_not_found'; end if;
+  if b.status not in ('confirmed', 'done') or b.date > today then raise exception 'review_not_yet'; end if;
+  if exists (select 1 from reviews where booking_id = b.id) then raise exception 'already_reviewed'; end if;
+  select left(string_agg(i->>'name', ', '), 60) into label from jsonb_array_elements(b.items) i;
+  insert into reviews (name, rating, service_label, body, booking_id)
+  values (left(btrim(b.name), 1) || '*', p_rating, coalesce(label, ''), left(btrim(p_body), 1000), b.id);
+end $$;
+grant execute on function submit_review(text, text, int, text) to anon, authenticated;
+
 -- 보관 기간이 지난 예약의 개인정보를 지워요. 관리자 화면을 열 때마다 자동으로 실행돼요.
 -- 날짜·메뉴·금액은 매출 확인용으로 남기고 이름·연락처·주소·행사 정보·요청사항만 지워요.
 create or replace function purge_expired_bookings()
@@ -301,7 +328,7 @@ end $$;
 -- 실제로 무엇을 보고 바꿀 수 있는지는 위의 RLS 규칙이 막아요.
 grant usage on schema public to anon, authenticated;
 grant select on all tables in schema public to anon, authenticated;
-grant insert on public.reviews to anon;
+revoke insert on public.reviews from anon;
 grant select, insert, update, delete on all tables in schema public to authenticated;
 grant usage, select on all sequences in schema public to anon, authenticated;
 grant execute on all functions in schema public to anon, authenticated;

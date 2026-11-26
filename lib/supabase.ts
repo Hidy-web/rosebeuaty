@@ -41,3 +41,16 @@ export function bookingErrorText(message: string) {
   for (const k of Object.keys(map)) if (message.includes(k)) return map[k];
   return "예약을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.";
 }
+
+/** 리뷰 함수 오류 코드를 손님이 읽을 문장으로 바꿔요. */
+export function reviewErrorText(message: string) {
+  const map: Record<string, string> = {
+    review_not_found: "일치하는 예약이 없어요. 예약번호와 연락처를 다시 확인해 주세요.",
+    review_not_yet: "방문이 끝난 확정 예약만 리뷰를 쓸 수 있어요.",
+    already_reviewed: "이 예약으로는 이미 리뷰를 쓰셨어요.",
+    invalid_rating: "별점을 골라 주세요.",
+    invalid_body: "후기를 5자 이상 적어 주세요.",
+  };
+  for (const k of Object.keys(map)) if (message.includes(k)) return map[k];
+  return "리뷰를 등록하지 못했어요. 잠시 후 다시 시도해 주세요.";
+}
