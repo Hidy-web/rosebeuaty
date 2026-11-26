@@ -1,5 +1,5 @@
 -- 로즈 출장 헤어·메이크업 예약 — Supabase 스키마
--- Supabase 대시보드 > SQL Editor 에 이 파일 전체를 붙여넣고 Run 하세요. (처음 한 번만)
+-- Supabase 대시보드 > SQL Editor 에 이 파일 전체를 붙여넣고 Run 하세요. 여러 번 실행해도 괜찮아요. (데이터는 지워지지 않아요)
 
 create extension if not exists pgcrypto;
 
@@ -15,6 +15,7 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function is_admin() to anon, authenticated;
 
+drop policy if exists "admins read self" on admins;
 create policy "admins read self" on admins for select using (user_id = auth.uid());
 
 -- ───────── 설정 (한 줄) ─────────
@@ -35,7 +36,9 @@ create table if not exists settings (
 );
 insert into settings (id) values (1) on conflict do nothing;
 alter table settings enable row level security;
+drop policy if exists "settings public read" on settings;
 create policy "settings public read" on settings for select using (true);
+drop policy if exists "settings admin update" on settings;
 create policy "settings admin update" on settings for update using (is_admin()) with check (is_admin());
 
 -- ───────── 메뉴 ─────────
@@ -57,9 +60,13 @@ create table if not exists services (
 );
 alter table service_categories enable row level security;
 alter table services enable row level security;
+drop policy if exists "svc cat public read" on service_categories;
 create policy "svc cat public read" on service_categories for select using (true);
+drop policy if exists "svc cat admin write" on service_categories;
 create policy "svc cat admin write" on service_categories for all using (is_admin()) with check (is_admin());
+drop policy if exists "svc public read" on services;
 create policy "svc public read" on services for select using (true);
+drop policy if exists "svc admin write" on services;
 create policy "svc admin write" on services for all using (is_admin()) with check (is_admin());
 
 -- ───────── 포트폴리오 ─────────
@@ -78,13 +85,19 @@ create table if not exists portfolio_items (
 );
 alter table portfolio_categories enable row level security;
 alter table portfolio_items enable row level security;
+drop policy if exists "pf cat public read" on portfolio_categories;
 create policy "pf cat public read" on portfolio_categories for select using (true);
+drop policy if exists "pf cat admin write" on portfolio_categories;
 create policy "pf cat admin write" on portfolio_categories for all using (is_admin()) with check (is_admin());
+drop policy if exists "pf public read" on portfolio_items;
 create policy "pf public read" on portfolio_items for select using (true);
+drop policy if exists "pf admin write" on portfolio_items;
 create policy "pf admin write" on portfolio_items for all using (is_admin()) with check (is_admin());
 
 insert into storage.buckets (id, name, public) values ('portfolio', 'portfolio', true) on conflict do nothing;
+drop policy if exists "portfolio admin upload" on storage.objects;
 create policy "portfolio admin upload" on storage.objects for insert to authenticated with check (bucket_id = 'portfolio' and is_admin());
+drop policy if exists "portfolio admin delete" on storage.objects;
 create policy "portfolio admin delete" on storage.objects for delete to authenticated using (bucket_id = 'portfolio' and is_admin());
 
 -- ───────── 리뷰 ─────────
@@ -99,9 +112,13 @@ create table if not exists reviews (
   created_at timestamptz not null default now()
 );
 alter table reviews enable row level security;
+drop policy if exists "reviews public read visible" on reviews;
 create policy "reviews public read visible" on reviews for select using (not hidden or is_admin());
+drop policy if exists "reviews public insert" on reviews;
 create policy "reviews public insert" on reviews for insert with check (not hidden and reply = '');
+drop policy if exists "reviews admin update" on reviews;
 create policy "reviews admin update" on reviews for update using (is_admin()) with check (is_admin());
+drop policy if exists "reviews admin delete" on reviews;
 create policy "reviews admin delete" on reviews for delete using (is_admin());
 
 -- ───────── 예약 ─────────
@@ -129,6 +146,7 @@ create table if not exists bookings (
 create index if not exists bookings_date_idx on bookings (date);
 alter table bookings enable row level security;
 -- 손님은 예약 목록을 직접 볼 수 없어요. 예약은 아래 함수로만 만들어요.
+drop policy if exists "bookings admin all" on bookings;
 create policy "bookings admin all" on bookings for all using (is_admin()) with check (is_admin());
 
 -- 손님 화면이 빈 시간을 계산할 때 쓰는 함수 (이름·연락처는 돌려주지 않음)
