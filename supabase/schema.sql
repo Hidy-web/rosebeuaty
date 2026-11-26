@@ -35,6 +35,8 @@ create table if not exists settings (
   regions jsonb not null default '[{"id":"seoul","name":"서울","fee":0},{"id":"etc","name":"그 외 지역 (상담 후 안내)","fee":null}]'
 );
 insert into settings (id) values (1) on conflict do nothing;
+-- 행사일 며칠 전까지 예약금을 입금해야 확정되는지 (나중에 추가된 칸)
+alter table settings add column if not exists confirm_days int not null default 3 check (confirm_days between 0 and 30);
 alter table settings enable row level security;
 drop policy if exists "settings public read" on settings;
 create policy "settings public read" on settings for select using (true);

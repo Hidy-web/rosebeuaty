@@ -22,7 +22,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
     void _id; void _c;
     const { error } = await sb().from("settings").update({ ...patch, regions: s.regions.map((r) => ({ ...r, name: r.name.trim() })) }).eq("id", 1);
     setSaving(false);
-    if (error) return toast("저장하지 못했어요. 다시 시도해 주세요");
+    if (error) return toast(/confirm_days/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
     toast("설정을 저장했어요");
     reload();
   }
@@ -30,7 +30,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
   return (
     <section className="panel">
       <h2>설정</h2>
-      <p className="note">바꾼 뒤 아래 &ldquo;저장&rdquo;을 눌러야 손님 화면에 반영돼요.</p>
+      <p className="note">바꾼 뒤 아래 &ldquo;저장&rdquo;을 눌러야 손님 화면에 반영돼요. &ldquo;행사일 며칠 전까지 확정&rdquo;을 0으로 두면 그 안내는 손님 화면에 나오지 않아요.</p>
       <h3>가게 정보</h3>
       <div className="settings">
         <div className="field"><label htmlFor="s-name">가게 이름</label><input id="s-name" value={s.shop_name} onChange={(e) => set("shop_name", e.target.value)} /></div>
@@ -43,6 +43,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
         <div className="field"><label htmlFor="s-holder">예금주</label><input id="s-holder" value={s.holder} onChange={(e) => set("holder", e.target.value)} /></div>
         <div className="field"><label htmlFor="s-dep">예약금 (원)</label><input id="s-dep" type="number" min={0} step={1000} value={s.deposit} onChange={(e) => set("deposit", Math.max(0, Number(e.target.value) || 0))} /></div>
         <div className="field"><label htmlFor="s-dl">입금 기한 (시간)</label><input id="s-dl" type="number" min={1} max={72} value={s.deadline_hours} onChange={(e) => set("deadline_hours", Math.min(72, Math.max(1, Number(e.target.value) || 1)))} /></div>
+        <div className="field"><label htmlFor="s-cd">행사일 며칠 전까지 확정 (일)</label><input id="s-cd" type="number" min={0} max={30} value={s.confirm_days ?? 3} onChange={(e) => set("confirm_days", Math.min(30, Math.max(0, Number(e.target.value) || 0)))} /></div>
       </div>
       <h3>방문 시간</h3>
       <div className="settings">

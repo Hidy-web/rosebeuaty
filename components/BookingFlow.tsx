@@ -1,7 +1,7 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { bookingErrorText, sb } from "@/lib/supabase";
-import { DOW, addDays, dLabel, dow, hm, parseD, seoulNow, won } from "@/lib/time";
+import { DOW, addDays, dLabel, dow, hm, seoulNow, won } from "@/lib/time";
 import type { ShopData } from "./useShopData";
 
 type Busy = { date: string; start_min: number; end_min: number };
@@ -15,7 +15,40 @@ type Made = {
   region_name: string;
 };
 
-const WEEKS = 5;
+const MAX_DAYS = 180; // 예약 받는 기간 (데이터베이스 함수와 같아요)
+const MONTHS = 6;
+
+type PostcodeData = { zonecode: string; roadAddress: string; jibunAddress: string; buildingName: string; apartment: string; sido: string };
+declare global {
+  interface Window {
+    daum?: { Postcode: new (o: { oncomplete: (d: PostcodeData) => void; width: string; height: string }) => { embed: (el: HTMLElement) => void } };
+  }
+}
+const POSTCODE_SRC = "https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+function loadPostcode(): Promise<void> {
+  if (window.daum?.Postcode) return Promise.resolve();
+  return new Promise((ok, fail) => {
+    const el = document.createElement("script");
+    el.src = POSTCODE_SRC;
+    el.async = true;
+    el.onload = () => (window.daum?.Postcode ? ok() : fail());
+    el.onerror = () => fail();
+    document.head.appendChild(el);
+  });
+}
+
+function monthKey(ds: string) {
+  return ds.slice(0, 7);
+}
+function addMonths(key: string, n: number) {
+  const [y, m] = key.split("-").map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+function daysInMonth(key: string) {
+  const [y, m] = key.split("-").map(Number);
+  return new Date(Date.UTC(y, m, 0)).getUTCDate();
+}
 
 export default function BookingFlow({ data, onExit, toast }: { data: ShopData; onExit: () => void; toast: (m: string) => void }) {
   const { settings: st, cats, services } = data;
@@ -24,13 +57,18 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
   const [date, setDate] = useState<string | null>(null);
   const [start, setStart] = useState<number | null>(null);
   const [busy, setBusy] = useState<Busy[] | null>(null);
-  const [form, setForm] = useState({ name: "", phone: "", region: st.regions[0]?.id ?? "", address: "", event: "", memo: "" });
+  const [form, setForm] = useState({ name: "", phone: "", region: st.regions[0]?.id ?? "", zip: "", base: "", detail: "", event: "", memo: "" });
+  const [finder, setFinder] = useState<"closed" | "loading" | "open" | "failed">("closed");
+  const finderEl = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
   const [made, setMade] = useState<{ res: Made; date: string; start: number; deadline: Date } | null>(null);
 
   const now = seoulNow();
-  const firstDay = addDays(now.date, -dow(now.date));
-  const lastDay = addDays(firstDay, WEEKS * 7 - 1);
+  const lastDay = addDays(now.date, MAX_DAYS);
+  const months = Array.from({ length: MONTHS + 1 }, (_, i) => addMonths(monthKey(now.date), i)).filter((k) => k <= monthKey(lastDay));
+  const [month, setMonth] = useState(monthKey(now.date));
+  const confirmDays = st.confirm_days ?? 3;
+  const address = form.base ? `${form.zip ? `[${form.zip}] ` : ""}${form.base}${form.detail.trim() ? `, ${form.detail.trim()}` : ""}` : form.detail.trim();
 
   const live = (cid: string) => services.filter((s) => s.category_id === cid && !s.deleted);
   const items = Object.entries(cart)
@@ -80,8 +118,35 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
     setStart(null);
   }
 
+  async function openFinder() {
+    setFinder("loading");
+    try {
+      await loadPostcode();
+      setFinder("open");
+    } catch {
+      setFinder("failed");
+    }
+  }
+  useEffect(() => {
+    if (finder !== "open" || !finderEl.current || !window.daum) return;
+    finderEl.current.innerHTML = "";
+    new window.daum.Postcode({
+      width: "100%",
+      height: "100%",
+      oncomplete: (d) => {
+        const extra = d.buildingName ? ` (${d.buildingName})` : "";
+        const seoul = d.sido.startsWith("서울");
+        const match = st.regions.find((r) => (seoul ? r.name.includes("서울") : !r.name.includes("서울")));
+        setForm((f) => ({ ...f, zip: d.zonecode, base: (d.roadAddress || d.jibunAddress) + extra, region: match?.id ?? f.region }));
+        setFinder("closed");
+        setTimeout(() => document.getElementById("g-detail")?.focus(), 50);
+      },
+    }).embed(finderEl.current);
+  }, [finder, st.regions]);
+
   async function submit() {
-    if (!form.address.trim()) return toast("방문 주소를 입력해 주세요");
+    if (finder !== "failed" && !form.base) return toast("주소 검색으로 방문 주소를 찾아 주세요");
+    if (!address) return toast("방문 주소를 입력해 주세요");
     if (!form.name.trim()) return toast("예약자 이름을 입력해 주세요");
     if (!/^01[0-9]-?\d{3,4}-?\d{4}$/.test(form.phone.trim())) return toast("연락처를 010-0000-0000 형식으로 입력해 주세요");
     if (!date || start === null) return;
@@ -91,7 +156,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
       p_phone: form.phone,
       p_items: items.map((i) => ({ id: i.svc.id, n: i.n })),
       p_region: form.region,
-      p_address: form.address,
+      p_address: address,
       p_event_note: form.event,
       p_date: date,
       p_start: start,
@@ -214,19 +279,33 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             <div className="center-msg" style={{ margin: "24px auto" }}><div className="spinner" /></div>
           ) : (
             <>
+              <div className="months" role="tablist" aria-label="월 선택">
+                {months.map((k) => {
+                  const [y, m] = k.split("-").map(Number);
+                  const showYear = y !== Number(now.date.slice(0, 4));
+                  return (
+                    <button key={k} role="tab" className="month" aria-selected={month === k} onClick={() => { setMonth(k); setDate(null); setStart(null); }}>
+                      {showYear && <small>{y}년</small>}
+                      {m}월
+                    </button>
+                  );
+                })}
+              </div>
               <div className="days">
-                {DOW.map((d) => <div className="dow" key={d}>{d}</div>)}
-                {Array.from({ length: WEEKS * 7 }, (_, i) => {
-                  const ds = addDays(firstDay, i);
-                  const past = ds < now.date;
+                {DOW.map((d, i) => <div className={"dow" + (i === 0 ? " sun" : i === 6 ? " sat" : "")} key={d}>{d}</div>)}
+                {Array.from({ length: dow(month + "-01") }, (_, i) => <span key={"b" + i} />)}
+                {Array.from({ length: daysInMonth(month) }, (_, i) => {
+                  const ds = `${month}-${String(i + 1).padStart(2, "0")}`;
+                  const past = ds < now.date || ds > lastDay;
                   const closed = st.closed_dates.includes(ds);
                   const full = !past && !closed && !slotsFor(ds).some((x) => x.ok);
-                  const d = parseD(ds);
+                  const wd = dow(ds);
                   return (
-                    <button key={ds} className="day num" aria-pressed={date === ds} disabled={past || closed || full}
+                    <button key={ds} className={"day num" + (wd === 0 ? " sun" : wd === 6 ? " sat" : "") + (ds === now.date ? " today" : "")}
+                      aria-pressed={date === ds} disabled={past || closed || full} aria-label={dLabel(ds) + (closed && !past ? " 휴무" : full ? " 마감" : "")}
                       onClick={() => { setDate(ds); setStart(null); }}>
-                      <b>{d.getUTCDate()}</b>
-                      <small>{closed && !past ? "휴무" : full ? "마감" : `${d.getUTCMonth() + 1}월`}</small>
+                      <b>{i + 1}</b>
+                      <small>{past ? "\u00a0" : closed ? "휴무" : full ? "마감" : ds === now.date ? "오늘" : "\u00a0"}</small>
                     </button>
                   );
                 })}
@@ -241,11 +320,10 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
                       </button>
                     ))}
                   </div>
-                  {start !== null ? (
-                    <p className="num"><b>{hm(start)}</b>에 방문해요.</p>
-                  ) : (
-                    <p className="note">앞뒤 예약과 이동 시간이 겹치는 시간은 고를 수 없어요.</p>
-                  )}
+                  {start !== null && <p className="num"><b>{hm(start)}</b>에 방문해요.</p>}
+                  <p className="callout">
+                    같은 날 앞뒤 예약 장소와의 거리에 따라 고르신 시간에 방문이 어려울 수 있어요. 그런 경우 예약금 입금 전에 먼저 연락드려 시간을 조정할게요.
+                  </p>
                 </>
               )}
             </>
@@ -268,9 +346,26 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             </select>
           </div>
           <div className="field">
-            <label htmlFor="g-addr">방문 주소</label>
-            <input id="g-addr" value={form.address} maxLength={200} onChange={(e) => setForm({ ...form, address: e.target.value })}
-              placeholder="예: 서울 송파구 ○○아파트 101동 1203호 / ○○홀 신부대기실" autoComplete="street-address" />
+            <label htmlFor="g-detail">방문 주소</label>
+            {finder !== "failed" && (
+              <div className="addr-row">
+                <input value={form.base ? `${form.zip ? `[${form.zip}] ` : ""}${form.base}` : ""} readOnly placeholder="주소 검색을 눌러 찾아 주세요"
+                  aria-label="기본 주소" onClick={openFinder} />
+                <button type="button" className="btn sm" onClick={openFinder}>{form.base ? "다시 검색" : "주소 검색"}</button>
+              </div>
+            )}
+            {(finder === "loading" || finder === "open") && (
+              <div className="finder">
+                <div className="finder-bar">
+                  <span className="muted">도로명, 건물 이름, 아파트 이름으로 찾아 주세요</span>
+                  <button type="button" className="btn ghost sm" onClick={() => setFinder("closed")}>닫기</button>
+                </div>
+                <div ref={finderEl} className="finder-box">{finder === "loading" && <div className="spinner" style={{ margin: "40px auto" }} />}</div>
+              </div>
+            )}
+            {finder === "failed" && <p className="note">주소 검색을 불러오지 못했어요. 아래 칸에 주소 전체를 적어 주세요.</p>}
+            <input id="g-detail" value={form.detail} maxLength={120} onChange={(e) => setForm({ ...form, detail: e.target.value })}
+              placeholder={finder === "failed" ? "예: 서울 송파구 올림픽로 300, 101동 1203호" : "상세 주소: 101동 1203호 / ○○홀 신부대기실"} autoComplete="address-line2" />
           </div>
           <div className="field">
             <label htmlFor="g-event">행사 시작 시간과 종류</label>
@@ -289,8 +384,9 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             <textarea id="g-memo" value={form.memo} maxLength={500} onChange={(e) => setForm({ ...form, memo: e.target.value })} placeholder="한복 착용 여부, 원하는 스타일, 주차 안내 등" />
           </div>
           <Summary withTime />
-          <p className="note">
+          <p className="callout">
             예약 신청 후 {st.deadline_hours}시간 안에 예약금을 입금해 주셔야 예약이 확정돼요. 시간 안에 입금이 없으면 취소될 수 있어요.
+            {confirmDays > 0 && <> 행사일 {confirmDays}일 전까지는 꼭 입금을 마쳐 예약을 확정해 주세요.</>}
           </p>
           <div><button className="btn" disabled={saving} onClick={submit}>{saving ? "신청 중…" : "예약 신청하기"}</button></div>
         </>
@@ -300,7 +396,10 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
         <>
           <div className="done-mark">✓</div>
           <h2>예약 신청이 접수됐어요</h2>
-          <p className="muted">아직 확정 전이에요. 아래 계좌로 예약금을 보내 주시면 확인 후 확정 연락을 드려요.</p>
+          <p className="muted">
+            아직 확정 전이에요. 아래 계좌로 예약금을 보내 주시면 확인 후 확정 연락을 드려요.
+            {confirmDays > 0 && <> 행사일 {confirmDays}일 전까지 입금이 확인되어야 예약이 확정돼요.</>}
+          </p>
           <div className="bank">
             <div className="eyebrow">예약금 입금 계좌</div>
             <div className="acct num" id="acct">{st.bank} {st.account}</div>
@@ -321,7 +420,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             <div><span className="muted">예약번호</span><b className="num">{made.res.code}</b></div>
             <div><span className="muted">상태</span><span className="pill st-pending">입금 대기</span></div>
             <div><span className="muted">방문 시간</span><span className="num">{dLabel(made.date)} {hm(made.start)}</span></div>
-            <div><span className="muted">방문 주소</span><span style={{ textAlign: "right" }}>{form.address.trim()}</span></div>
+            <div><span className="muted">방문 주소</span><span style={{ textAlign: "right" }}>{address}</span></div>
             <div><span className="muted">총 금액</span><b className="num">{won(made.res.total)}{made.res.travel_fee == null ? " + 출장비" : ""}</b></div>
           </div>
           <p className="note">

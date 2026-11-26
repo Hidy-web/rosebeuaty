@@ -9,6 +9,8 @@ export type Settings = {
   holder: string;
   deposit: number;
   deadline_hours: number;
+  /** 행사일 며칠 전까지 입금해야 확정되는지. 0이면 안내 안 함 */
+  confirm_days?: number;
   open_min: number;
   close_min: number;
   buffer_min: number;
