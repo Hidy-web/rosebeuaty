@@ -280,3 +280,4 @@ button{cursor:pointer}
 .btn.kakao:hover{background:#F5DC00}
 a.btn{text-decoration:none;display:inline-flex;align-items:center}
 .summary > div > .muted:first-child{white-space:nowrap}
+.btn.toss{background:#0064FF;color:#fff}

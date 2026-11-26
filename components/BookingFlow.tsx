@@ -85,6 +85,8 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
   const subtotal = items.reduce((a, i) => a + i.svc.price * i.n, 0);
   const people = items.reduce((a, i) => a + i.n, 0);
   const region = st.regions.find((r) => r.id === form.region) ?? st.regions[0];
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => setIsMobile(/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)), []);
   const payUrl = /^https:\/\/qr\.kakaopay\.com\/\S+$/.test((st.kakaopay_url ?? "").trim()) ? st.kakaopay_url!.trim() : "";
   const pr = price(st, { subtotal, people, travelFee: region?.fee ?? null, date, start });
   const refundLines = lines(st.refund_policy ?? DEFAULT_REFUND_POLICY);
@@ -221,6 +223,23 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
   async function copyBooking() {
     if (await copyText(`${bookingText(false)}\n${lookupUrl()}`)) toast("예약 내용을 복사했어요. 카톡 '나와의 채팅'에 붙여넣어 저장하세요");
     else toast("복사하지 못했어요. 화면을 캡처해 두세요");
+  }
+
+  // 토스 앱 송금 화면을 은행·계좌·금액이 채워진 채로 열어요. (토스 공식 기능이 아니라 앱 주소를 쓰는 방식)
+  // 앱이 없으면 아무 일도 일어나지 않으니, 먼저 계좌를 복사해 두고 안내해요.
+  async function sendToss() {
+    if (!made) return;
+    const acct = st.account.replace(/[^0-9]/g, "");
+    const url = `supertoss://send?bank=${encodeURIComponent(st.bank.trim())}&accountNo=${acct}&amount=${made.res.deposit}`;
+    await copyText(`${st.bank} ${st.account}`);
+    let left = false;
+    const onHide = () => { if (document.hidden) left = true; };
+    document.addEventListener("visibilitychange", onHide);
+    window.location.href = url;
+    setTimeout(() => {
+      document.removeEventListener("visibilitychange", onHide);
+      if (!left) toast("토스 앱을 열지 못했어요. 계좌번호를 복사해 두었으니 은행 앱에 붙여넣어 보내 주세요");
+    }, 1800);
   }
 
   async function copyAccount() {
@@ -503,6 +522,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             {(st.account.trim() || payUrl) && (
               <div className="row-actions">
                 {st.account.trim() && <button className="btn sm" onClick={copyAccount}>계좌 복사</button>}
+                {st.account.trim() && isMobile && <button className="btn sm toss" onClick={sendToss}>토스로 송금</button>}
                 {payUrl && <a className="btn sm kakao" href={payUrl} target="_blank" rel="noopener noreferrer">카카오페이로 송금</a>}
               </div>
             )}
