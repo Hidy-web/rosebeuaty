@@ -113,7 +113,7 @@ export default function BookingsTab({ data, reload, toast, onPending }: TabProps
                       {b.memo && ` · “${b.memo}”`}
                     </div>
                     <div className="money num">
-                      총 {won(b.total)}{b.travel_fee == null ? " + 출장비" : ""} · 예약금 {won(b.deposit)} · 잔금 {won(b.total - b.deposit)}
+                      총 {won(b.total)}{b.travel_fee == null ? " + 출장비" : ""} · 예약금 {won(b.deposit)} · 현장 결제 {won(b.total - b.deposit)}
                       {(b.early_fee ?? 0) > 0 && <> · 이른 시간 +{won(b.early_fee!)}</>}
                       {(b.discount ?? 0) > 0 && <> · 할인 −{won(b.discount!)}</>}
                     </div>

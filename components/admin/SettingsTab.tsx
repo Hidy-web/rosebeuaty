@@ -20,6 +20,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
 
   async function save() {
     if (s.close_min <= s.open_min) return toast("마지막 방문 가능 시간이 시작 시간보다 늦어야 해요");
+    if (s.kakaopay_url && !/^https:\/\/qr\.kakaopay\.com\/\S+$/.test(s.kakaopay_url)) return toast("카카오페이 송금 링크는 https://qr.kakaopay.com/ 으로 시작해야 해요");
     if (!s.regions.length) return toast("지역을 하나 이상 남겨 주세요");
     if (s.regions.some((r) => !r.name.trim())) return toast("지역 이름을 입력해 주세요");
     setSaving(true);
@@ -27,7 +28,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
     void _id; void _c;
     const { error } = await sb().from("settings").update({ ...patch, regions: s.regions.map((r) => ({ ...r, name: r.name.trim() })) }).eq("id", 1);
     setSaving(false);
-    if (error) return toast(/confirm_days|retention_months|privacy_|extra_notice|early_fees|weekday_discount|group_|deposit_pct|refund_policy|promise/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
+    if (error) return toast(/confirm_days|retention_months|privacy_|extra_notice|early_fees|weekday_discount|group_|deposit_pct|refund_policy|promise|kakaopay_url/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
     toast("설정을 저장했어요");
     reload();
   }
@@ -46,6 +47,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
         <div className="field"><label htmlFor="s-bank">은행</label><input id="s-bank" value={s.bank} onChange={(e) => set("bank", e.target.value)} placeholder="예: 국민은행" /></div>
         <div className="field"><label htmlFor="s-acct">계좌번호</label><input id="s-acct" value={s.account} onChange={(e) => set("account", e.target.value)} /></div>
         <div className="field"><label htmlFor="s-holder">예금주</label><input id="s-holder" value={s.holder} onChange={(e) => set("holder", e.target.value)} /></div>
+        <div className="field"><label htmlFor="s-kp">카카오페이 송금 링크 (선택)</label><input id="s-kp" value={s.kakaopay_url ?? ""} onChange={(e) => set("kakaopay_url", e.target.value.trim())} placeholder="https://qr.kakaopay.com/..." inputMode="url" /></div>
         <div className="field"><label htmlFor="s-dpct">예약금 비율 (총 금액의 %, 0이면 고정 금액)</label><input id="s-dpct" type="number" min={0} max={100} step={5} value={s.deposit_pct ?? 20} onChange={(e) => set("deposit_pct", num(e.target.value, 0, 100))} /></div>
         <div className="field"><label htmlFor="s-dep">{(s.deposit_pct ?? 20) > 0 ? "최소 예약금 (원)" : "예약금 (원)"}</label><input id="s-dep" type="number" min={0} step={1000} value={s.deposit} onChange={(e) => set("deposit", Math.max(0, Number(e.target.value) || 0))} /></div>
         <div className="field"><label htmlFor="s-dl">입금 기한 (시간)</label><input id="s-dl" type="number" min={1} max={72} value={s.deadline_hours} onChange={(e) => set("deadline_hours", Math.min(72, Math.max(1, Number(e.target.value) || 1)))} /></div>

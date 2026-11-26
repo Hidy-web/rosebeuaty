@@ -278,3 +278,5 @@ button{cursor:pointer}
 .save-box{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface)}
 .btn.kakao{background:#FEE500;color:#191919}
 .btn.kakao:hover{background:#F5DC00}
+a.btn{text-decoration:none;display:inline-flex;align-items:center}
+.summary > div > .muted:first-child{white-space:nowrap}

@@ -85,6 +85,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
   const subtotal = items.reduce((a, i) => a + i.svc.price * i.n, 0);
   const people = items.reduce((a, i) => a + i.n, 0);
   const region = st.regions.find((r) => r.id === form.region) ?? st.regions[0];
+  const payUrl = /^https:\/\/qr\.kakaopay\.com\/\S+$/.test((st.kakaopay_url ?? "").trim()) ? st.kakaopay_url!.trim() : "";
   const pr = price(st, { subtotal, people, travelFee: region?.fee ?? null, date, start });
   const refundLines = lines(st.refund_policy ?? DEFAULT_REFUND_POLICY);
   const itemsText = items.map((i) => i.svc.name + (i.n > 1 ? ` ×${i.n}` : "")).join(", ");
@@ -198,10 +199,12 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
       `예약번호 ${r.code}`,
       `${dLabel(made.date)} ${hm(made.start)}`,
       short && menu.length > 30 ? menu.slice(0, 29) + "…" : menu,
-      `총 ${won(r.total)}${r.travel_fee == null ? " + 출장비" : ""} / 예약금 ${won(r.deposit)}`,
+      `총 ${won(r.total)}${r.travel_fee == null ? " + 출장비" : ""}`,
+      `예약금 ${won(r.deposit)} / 현장 결제 ${won(Math.max(0, r.total - r.deposit))}${r.travel_fee == null ? " + 출장비" : ""}`,
       `입금 ${acct}`,
       `입금 기한 ${dl}까지`,
     ];
+    if (!short && payUrl) rows.push(`카카오페이 송금 ${payUrl}`);
     if (!short) rows.push(`방문 주소 ${address}`, "", "예약 확인은 아래 링크에서 예약번호와 연락처로 할 수 있어요.");
     return rows.join("\n");
   }
@@ -257,6 +260,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
       {pr.group > 0 && <div><span className="muted">{st.group_min}인 이상 할인</span><span className="num disc">−{won(pr.group)}</span></div>}
       <div><span className="muted">총 금액</span><b className="num">{won(pr.total)}{region?.fee == null ? " + 출장비" : ""}</b></div>
       <div><span className="muted">예약금 (먼저 입금)</span><b className="num">{won(pr.deposit)}</b></div>
+      <div><span className="muted">현장 결제 금액 (당일)</span><b className="num">{won(Math.max(0, pr.total - pr.deposit))}{region?.fee == null ? " + 출장비" : ""}</b></div>
     </div>
   );
 
@@ -496,7 +500,13 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
               </div>
               <div><span>입금자명</span><b>{form.name.trim()}</b></div>
             </div>
-            {st.account.trim() && <div className="row-actions"><button className="btn sm" onClick={copyAccount}>계좌번호 복사</button></div>}
+            {(st.account.trim() || payUrl) && (
+              <div className="row-actions">
+                {st.account.trim() && <button className="btn sm" onClick={copyAccount}>계좌 복사</button>}
+                {payUrl && <a className="btn sm kakao" href={payUrl} target="_blank" rel="noopener noreferrer">카카오페이로 송금</a>}
+              </div>
+            )}
+            {payUrl && <p className="note" style={{ margin: "6px 0 0", color: "inherit", opacity: 0.8 }}>카카오페이에서 금액 {won(made.res.deposit)}을 직접 넣고, 메모에 예약자 이름을 적어 주세요.</p>}
           </div>
           <div className="card summary">
             <div><span className="muted">예약번호</span><b className="num">{made.res.code}</b></div>
@@ -504,6 +514,8 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             <div><span className="muted">방문 시간</span><span className="num">{dLabel(made.date)} {hm(made.start)}</span></div>
             <div><span className="muted">방문 주소</span><span style={{ textAlign: "right" }}>{address}</span></div>
             <div><span className="muted">총 금액</span><b className="num">{won(made.res.total)}{made.res.travel_fee == null ? " + 출장비" : ""}</b></div>
+            <div><span className="muted">예약금 (먼저 입금)</span><b className="num">{won(made.res.deposit)}</b></div>
+            <div><span className="muted">현장 결제 금액 (당일)</span><b className="num">{won(Math.max(0, made.res.total - made.res.deposit))}{made.res.travel_fee == null ? " + 출장비" : ""}</b></div>
           </div>
           <div className="save-box">
             <b>예약 내용을 저장해 두세요</b>

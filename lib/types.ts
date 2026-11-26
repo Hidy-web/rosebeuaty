@@ -25,6 +25,8 @@ export type Settings = {
   deposit_pct?: number;
   refund_policy?: string;
   promise?: string;
+  /** 카카오페이 송금 링크 (https://qr.kakaopay.com/...) */
+  kakaopay_url?: string;
   open_min: number;
   close_min: number;
   buffer_min: number;

@@ -51,6 +51,8 @@ alter table settings add column if not exists group_discount int not null defaul
 alter table settings add column if not exists deposit_pct int not null default 20 check (deposit_pct between 0 and 100);
 alter table settings add column if not exists refund_policy text not null default E'행사 30일 전까지 취소하면 예약금을 전액 돌려드려요.\n행사 29일~8일 전에 취소하면 예약금에서 총 금액의 10%를 뺀 나머지를 돌려드려요.\n행사 7일 이내에 취소하거나 연락 없이 예약을 지키지 않으면 예약금은 돌려드리지 않아요.\n날짜·시간 변경은 행사 14일 전까지 1회 무료예요. 그 뒤에는 가능한 일정 안에서 1회 2만 원이 들어요.\n가게 사정으로 취소하게 되면 예약금 전액을 돌려드리고 총 금액의 10%를 더 배상해 드려요.\n천재지변·감염병 등으로 진행이 어려우면 위약금 없이 일정을 바꾸거나 전액 돌려드려요.';
 alter table settings add column if not exists promise text not null default '행사 시간에 늦지 않도록 전날 꼭 확인 연락을 드려요.';
+-- 카카오페이 송금 링크 (선택)
+alter table settings add column if not exists kakaopay_url text not null default '' check (kakaopay_url = '' or kakaopay_url ~ '^https://qr\.kakaopay\.com/');
 alter table settings enable row level security;
 drop policy if exists "settings public read" on settings;
 create policy "settings public read" on settings for select using (true);
