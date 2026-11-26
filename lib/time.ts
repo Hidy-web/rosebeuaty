@@ -37,4 +37,5 @@ export function dLabel(s: string) {
   return `${d.getUTCMonth() + 1}월 ${d.getUTCDate()}일 (${DOW[d.getUTCDay()]})`;
 }
 export const hm = (m: number) => `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+export const DEFAULT_EXTRA_NOTICE = "주차비는 실비로 받아요. (무료 주차가 되면 0원)\n가발(헤어피스)·속눈썹 비용은 별도로 받아요.";
 export const won = (n: number) => n.toLocaleString("ko-KR") + "원";

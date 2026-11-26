@@ -4,6 +4,7 @@ import { bookingErrorText, sb } from "@/lib/supabase";
 import { DOW, addDays, dLabel, dow, hm, seoulNow, won } from "@/lib/time";
 import type { ShopData } from "./useShopData";
 import { ConsentSummary } from "./PrivacyPolicy";
+import ExtraNotice from "./ExtraNotice";
 
 type Busy = { date: string; start_min: number; end_min: number };
 type Made = {
@@ -398,6 +399,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             </p>
           </div>
           <Summary withTime />
+          <ExtraNotice text={st.extra_notice} />
           <p className="callout">
             예약 신청 후 {st.deadline_hours}시간 안에 예약금을 입금해 주셔야 예약이 확정돼요. 시간 안에 입금이 없으면 취소될 수 있어요.
             {confirmDays > 0 && <> 행사일 {confirmDays}일 전까지는 꼭 입금을 마쳐 예약을 확정해 주세요.</>}

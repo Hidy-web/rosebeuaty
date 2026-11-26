@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { sb } from "@/lib/supabase";
 import type { Region, Settings } from "@/lib/types";
-import { hm } from "@/lib/time";
+import { DEFAULT_EXTRA_NOTICE, hm } from "@/lib/time";
 import type { TabProps } from "./AdminApp";
 
 const HOURS = Array.from({ length: 33 }, (_, i) => 300 + i * 30); // 05:00 ~ 21:00
@@ -22,7 +22,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
     void _id; void _c;
     const { error } = await sb().from("settings").update({ ...patch, regions: s.regions.map((r) => ({ ...r, name: r.name.trim() })) }).eq("id", 1);
     setSaving(false);
-    if (error) return toast(/confirm_days|retention_months|privacy_/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
+    if (error) return toast(/confirm_days|retention_months|privacy_|extra_notice/.test(error.message) ? "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요" : "저장하지 못했어요. 다시 시도해 주세요");
     toast("설정을 저장했어요");
     reload();
   }
@@ -45,6 +45,10 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
         <div className="field"><label htmlFor="s-dl">입금 기한 (시간)</label><input id="s-dl" type="number" min={1} max={72} value={s.deadline_hours} onChange={(e) => set("deadline_hours", Math.min(72, Math.max(1, Number(e.target.value) || 1)))} /></div>
         <div className="field"><label htmlFor="s-cd">행사일 며칠 전까지 확정 (일)</label><input id="s-cd" type="number" min={0} max={30} value={s.confirm_days ?? 3} onChange={(e) => set("confirm_days", Math.min(30, Math.max(0, Number(e.target.value) || 0)))} /></div>
       </div>
+      <h3>별도 비용 안내</h3>
+      <p className="note">메뉴·가격 화면과 예약 신청 화면에 보여요. 한 줄에 하나씩 적어 주세요. 비우면 안내가 나오지 않아요.</p>
+      <div className="field"><label htmlFor="s-extra">안내 문구</label>
+        <textarea id="s-extra" rows={3} value={s.extra_notice ?? DEFAULT_EXTRA_NOTICE} onChange={(e) => set("extra_notice", e.target.value)} /></div>
       <h3>개인정보</h3>
       <p className="note">손님 화면 아래 &ldquo;개인정보 처리방침&rdquo;에 그대로 보여요. 보관 기간이 지난 예약은 관리자 화면을 열 때 이름·연락처·주소가 자동으로 지워져요.</p>
       <div className="settings">

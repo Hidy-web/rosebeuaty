@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { imageUrl, reviewErrorText, sb } from "@/lib/supabase";
 import { STATUS_LABEL, type Booking } from "@/lib/types";
 import { dLabel, hm, won } from "@/lib/time";
+import ExtraNotice from "./ExtraNotice";
 import { Loading, Toast, useShopData, useToast } from "./useShopData";
 import BookingFlow from "./BookingFlow";
 
@@ -101,6 +102,7 @@ export default function GuestApp() {
               <p className="note">
                 가격은 1인 기준이에요. 모든 예약은 예약금 {won(st.deposit)} 입금 후 확정되며, 예약금은 당일 결제 금액에서 빠져요.
               </p>
+              <ExtraNotice text={st.extra_notice} />
             </div>
           )}
 
@@ -146,6 +148,7 @@ export default function GuestApp() {
     </div>
   );
 }
+
 
 function ReviewsTab({ reviews, avg, onPosted, toast }: { reviews: import("@/lib/types").Review[]; avg: number; onPosted: () => void; toast: (m: string) => void }) {
   const [rating, setRating] = useState(5);

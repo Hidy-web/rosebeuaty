@@ -41,6 +41,8 @@ alter table settings add column if not exists confirm_days int not null default 
 alter table settings add column if not exists retention_months int not null default 12 check (retention_months between 1 and 60);
 alter table settings add column if not exists privacy_officer text not null default '';
 alter table settings add column if not exists privacy_contact text not null default '';
+-- 별도 비용 안내 (주차비, 가발·속눈썹 등)
+alter table settings add column if not exists extra_notice text not null default E'주차비는 실비로 받아요. (무료 주차가 되면 0원)\n가발(헤어피스)·속눈썹 비용은 별도로 받아요.';
 alter table settings enable row level security;
 drop policy if exists "settings public read" on settings;
 create policy "settings public read" on settings for select using (true);

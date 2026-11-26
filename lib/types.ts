@@ -15,6 +15,8 @@ export type Settings = {
   retention_months?: number;
   privacy_officer?: string;
   privacy_contact?: string;
+  /** 추가 비용 안내 (주차비, 가발·속눈썹 등). 한 줄에 하나 */
+  extra_notice?: string;
   open_min: number;
   close_min: number;
   buffer_min: number;

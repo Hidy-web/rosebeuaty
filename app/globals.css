@@ -261,3 +261,6 @@ button{cursor:pointer}
 .cat-name{flex:1;min-width:0;font-size:1.05rem;font-weight:700;background:transparent;border:1px solid transparent;border-radius:8px;padding:4px 8px;margin-left:-8px;color:var(--ink)}
 .cat-name:hover,.cat-name:focus{border-color:var(--line);background:var(--bg)}
 .svc-edit .order-btns + .sname{margin-left:0}
+.extra-notice{background:var(--sunk);border-radius:10px;padding:10px 14px;font-size:.85rem;margin:12px 0}
+.extra-notice ul{margin:4px 0 0;padding-left:1.1em}
+.extra-notice li{margin:2px 0}
