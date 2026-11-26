@@ -25,7 +25,7 @@ declare global {
     daum?: { Postcode: new (o: { oncomplete: (d: PostcodeData) => void; width: string; height: string }) => { embed: (el: HTMLElement) => void } };
   }
 }
-const POSTCODE_SRC = "https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
+const POSTCODE_SRC = "https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js";
 function loadPostcode(): Promise<void> {
   if (window.daum?.Postcode) return Promise.resolve();
   return new Promise((ok, fail) => {
@@ -416,8 +416,14 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
           </p>
           <div className="bank">
             <div className="eyebrow">예약금 입금 계좌</div>
-            <div className="acct num" id="acct">{st.bank} {st.account}</div>
-            <div>예금주 {st.holder}</div>
+            {st.account.trim() ? (
+              <>
+                <div className="acct num" id="acct">{st.bank} {st.account}</div>
+                <div>예금주 {st.holder}</div>
+              </>
+            ) : (
+              <div>입금 계좌는 확인 연락을 드릴 때 안내해 드려요.</div>
+            )}
             <div className="summary">
               <div><span>입금할 금액</span><b className="num">{won(made.res.deposit)}</b></div>
               <div>
@@ -428,7 +434,7 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
               </div>
               <div><span>입금자명</span><b>{form.name.trim()}</b></div>
             </div>
-            <div className="row-actions"><button className="btn sm" onClick={copyAccount}>계좌번호 복사</button></div>
+            {st.account.trim() && <div className="row-actions"><button className="btn sm" onClick={copyAccount}>계좌번호 복사</button></div>}
           </div>
           <div className="card summary">
             <div><span className="muted">예약번호</span><b className="num">{made.res.code}</b></div>
