@@ -5,6 +5,7 @@ import { DOW, addDays, dLabel, dow, hm, seoulNow, won } from "@/lib/time";
 import type { ShopData } from "./useShopData";
 import { ConsentSummary } from "./PrivacyPolicy";
 import ExtraNotice from "./ExtraNotice";
+import { copyText, kakaoEnabled, shareKakao, shareNative } from "@/lib/share";
 import { DEFAULT_REFUND_POLICY, earlyFee, lines, price } from "@/lib/pricing";
 
 type Busy = { date: string; start_min: number; end_min: number };
@@ -184,6 +185,39 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
     setMade({ res: res as Made, date, start, deadline: new Date(Date.now() + st.deadline_hours * 3600e3) });
     setStep(4);
     window.scrollTo(0, 0);
+  }
+
+  function bookingText(short: boolean) {
+    if (!made) return "";
+    const r = made.res;
+    const menu = r.items.map((i) => i.name + (i.n > 1 ? ` ×${i.n}` : "")).join(", ");
+    const dl = made.deadline.toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+    const acct = st.account.trim() ? `${st.bank} ${st.account}${st.holder ? ` (${st.holder})` : ""}` : "확인 연락 때 안내";
+    const rows = [
+      `[${st.shop_name}] 예약 신청`,
+      `예약번호 ${r.code}`,
+      `${dLabel(made.date)} ${hm(made.start)}`,
+      short && menu.length > 30 ? menu.slice(0, 29) + "…" : menu,
+      `총 ${won(r.total)}${r.travel_fee == null ? " + 출장비" : ""} / 예약금 ${won(r.deposit)}`,
+      `입금 ${acct}`,
+      `입금 기한 ${dl}까지`,
+    ];
+    if (!short) rows.push(`방문 주소 ${address}`, "", "예약 확인은 아래 링크에서 예약번호와 연락처로 할 수 있어요.");
+    return rows.join("\n");
+  }
+  const lookupUrl = () => (made ? `${window.location.origin}/?lookup=${encodeURIComponent(made.res.code)}` : "");
+
+  async function saveToKakao() {
+    if (kakaoEnabled() && (await shareKakao(bookingText(true), lookupUrl(), "예약 확인하기"))) return;
+    const r = await shareNative(`${st.shop_name} 예약`, bookingText(false), lookupUrl());
+    if (r) return;
+    if (await copyText(`${bookingText(false)}\n${lookupUrl()}`)) toast("예약 내용을 복사했어요. 카톡 '나와의 채팅'에 붙여넣어 저장하세요");
+    else toast("복사하지 못했어요. 화면을 캡처해 두세요");
+  }
+
+  async function copyBooking() {
+    if (await copyText(`${bookingText(false)}\n${lookupUrl()}`)) toast("예약 내용을 복사했어요. 카톡 '나와의 채팅'에 붙여넣어 저장하세요");
+    else toast("복사하지 못했어요. 화면을 캡처해 두세요");
   }
 
   async function copyAccount() {
@@ -470,6 +504,14 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
             <div><span className="muted">방문 시간</span><span className="num">{dLabel(made.date)} {hm(made.start)}</span></div>
             <div><span className="muted">방문 주소</span><span style={{ textAlign: "right" }}>{address}</span></div>
             <div><span className="muted">총 금액</span><b className="num">{won(made.res.total)}{made.res.travel_fee == null ? " + 출장비" : ""}</b></div>
+          </div>
+          <div className="save-box">
+            <b>예약 내용을 저장해 두세요</b>
+            <p className="note" style={{ margin: "4px 0 10px" }}>예약번호, 방문 시간, 금액, 입금 계좌를 본인 카톡(나와의 채팅)으로 보내 둘 수 있어요.</p>
+            <div className="row-actions">
+              <button className="btn kakao" onClick={saveToKakao}>카톡으로 저장</button>
+              <button className="btn ghost sm" onClick={copyBooking}>내용 복사</button>
+            </div>
           </div>
           <p className="note">
             예약번호를 꼭 저장해 두세요. &ldquo;예약 확인&rdquo; 탭에서 예약번호와 연락처로 상태를 볼 수 있어요. 당일에는 총 금액에서 예약금을 뺀{" "}

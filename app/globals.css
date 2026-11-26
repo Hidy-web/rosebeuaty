@@ -274,3 +274,7 @@ button{cursor:pointer}
 .refund{font-size:.85rem;margin:8px 0}
 .refund summary{cursor:pointer;color:var(--accent);font-weight:500}
 .refund ul{padding-left:1.1em;line-height:1.6}
+/* 카톡으로 저장 */
+.save-box{border:1px solid var(--line);border-radius:12px;padding:14px;background:var(--surface)}
+.btn.kakao{background:#FEE500;color:#191919}
+.btn.kakao:hover{background:#F5DC00}

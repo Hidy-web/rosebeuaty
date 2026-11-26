@@ -27,12 +27,19 @@ export default function GuestApp() {
   const toast = useToast();
   const [tab, setTab] = useState<"price" | "portfolio" | "reviews" | "lookup">("price");
   const [reviewToken, setReviewToken] = useState("");
+  const [lookupCode, setLookupCode] = useState("");
   // 관리자가 보낸 리뷰 링크(?review=…)로 들어오면 리뷰 탭을 바로 열어요.
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("review");
+    const q = new URLSearchParams(window.location.search);
+    const t = q.get("review");
     if (t) {
       setReviewToken(t);
       setTab("reviews");
+    }
+    const lk = q.get("lookup");
+    if (lk) {
+      setLookupCode(lk);
+      setTab("lookup");
     }
   }, []);
   const [booking, setBooking] = useState(false);
@@ -168,7 +175,7 @@ export default function GuestApp() {
 
           {tab === "reviews" && <ReviewsTab reviews={visibleReviews} avg={avg} onPosted={reload} toast={toast.show} token={reviewToken}
             onTokenUsed={() => { setReviewToken(""); window.history.replaceState(null, "", window.location.pathname); }} />}
-          {tab === "lookup" && <LookupTab />}
+          {tab === "lookup" && <LookupTab initialCode={lookupCode} />}
         </div>
       </div>
       <p className="footer">
@@ -308,8 +315,8 @@ function ReviewsTab({ reviews, avg, onPosted, toast, token, onTokenUsed }: {
   );
 }
 
-function LookupTab() {
-  const [code, setCode] = useState("");
+function LookupTab({ initialCode }: { initialCode: string }) {
+  const [code, setCode] = useState(initialCode);
   const [phone, setPhone] = useState("");
   const [res, setRes] = useState<Partial<Booking> | null | "none">(null);
   const [busy, setBusy] = useState(false);
