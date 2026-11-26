@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { imageUrl, reviewErrorText, sb } from "@/lib/supabase";
 import { STATUS_LABEL, type Booking } from "@/lib/types";
 import { dLabel, hm, won } from "@/lib/time";
@@ -26,6 +26,15 @@ export default function GuestApp() {
   const { data, error, reload } = useShopData();
   const toast = useToast();
   const [tab, setTab] = useState<"price" | "portfolio" | "reviews" | "lookup">("price");
+  const [reviewToken, setReviewToken] = useState("");
+  // 관리자가 보낸 리뷰 링크(?review=…)로 들어오면 리뷰 탭을 바로 열어요.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("review");
+    if (t) {
+      setReviewToken(t);
+      setTab("reviews");
+    }
+  }, []);
   const [booking, setBooking] = useState(false);
   const [pf, setPf] = useState("전체");
 
@@ -157,7 +166,8 @@ export default function GuestApp() {
             </div>
           )}
 
-          {tab === "reviews" && <ReviewsTab reviews={visibleReviews} avg={avg} onPosted={reload} toast={toast.show} />}
+          {tab === "reviews" && <ReviewsTab reviews={visibleReviews} avg={avg} onPosted={reload} toast={toast.show} token={reviewToken}
+            onTokenUsed={() => { setReviewToken(""); window.history.replaceState(null, "", window.location.pathname); }} />}
           {tab === "lookup" && <LookupTab />}
         </div>
       </div>
@@ -170,9 +180,16 @@ export default function GuestApp() {
 }
 
 
-function ReviewsTab({ reviews, avg, onPosted, toast }: { reviews: import("@/lib/types").Review[]; avg: number; onPosted: () => void; toast: (m: string) => void }) {
+function ReviewsTab({ reviews, avg, onPosted, toast, token, onTokenUsed }: {
+  reviews: import("@/lib/types").Review[]; avg: number; onPosted: () => void; toast: (m: string) => void; token: string; onTokenUsed: () => void;
+}) {
   const [rating, setRating] = useState(5);
   const [code, setCode] = useState("");
+  const [date, setDate] = useState("");
+  const formRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (token) formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [token]);
   const [phone, setPhone] = useState("");
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
@@ -180,13 +197,25 @@ function ReviewsTab({ reviews, avg, onPosted, toast }: { reviews: import("@/lib/
 
   async function submit() {
     setErr("");
-    if (!code.trim() || !phone.trim()) return setErr("예약번호와 연락처를 입력해 주세요.");
+    if (!token) {
+      if (!phone.trim()) return setErr("예약하실 때 적은 연락처를 입력해 주세요.");
+      if (!code.trim() && !date) return setErr("예약번호나 행사 날짜 중 하나를 입력해 주세요.");
+    }
     if (body.trim().length < 5) return setErr("후기를 5자 이상 적어 주세요.");
     setBusy(true);
-    const { error } = await sb().rpc("submit_review", { p_code: code, p_phone: phone, p_rating: rating, p_body: body });
+    const { error } = await sb().rpc("submit_review", {
+      p_token: token || null,
+      p_code: token ? null : code.trim() || null,
+      p_phone: token ? null : phone,
+      p_date: token || code.trim() ? null : date || null,
+      p_rating: rating,
+      p_body: body,
+    });
     setBusy(false);
     if (error) return setErr(reviewErrorText(error.message));
+    if (token) onTokenUsed();
     setCode("");
+    setDate("");
     setPhone("");
     setBody("");
     setRating(5);
@@ -229,16 +258,30 @@ function ReviewsTab({ reviews, avg, onPosted, toast }: { reviews: import("@/lib/
         ))}
       </div>
       <div className="card" style={{ display: "grid", gap: 12 }}>
-        <h3>리뷰 쓰기</h3>
-        <p className="muted" style={{ fontSize: ".85rem", margin: 0 }}>예약하고 방문을 받으신 손님만 쓸 수 있어요. 예약번호와 연락처를 넣어 주세요. (예약당 한 번)</p>
-        <div className="field">
-          <label htmlFor="rv-code">예약번호</label>
-          <input id="rv-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="예: R1126-AB12" autoCapitalize="characters" />
-        </div>
-        <div className="field">
-          <label htmlFor="rv-phone">연락처</label>
-          <input id="rv-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="010-0000-0000" inputMode="tel" autoComplete="tel" />
-        </div>
+        <h3 ref={formRef}>리뷰 쓰기</h3>
+        {token ? (
+          <p className="callout" style={{ margin: 0 }}>보내 드린 리뷰 링크로 들어오셨어요. 별점과 후기만 남겨 주시면 돼요.</p>
+        ) : (
+          <>
+            <p className="muted" style={{ fontSize: ".85rem", margin: 0 }}>
+              방문을 받으신 손님만 쓸 수 있어요. (예약당 한 번) 연락처와 함께 <b>예약번호</b>나 <b>행사 날짜</b> 중 하나만 넣어 주세요.
+            </p>
+            <div className="field">
+              <label htmlFor="rv-phone">연락처</label>
+              <input id="rv-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="010-0000-0000" inputMode="tel" autoComplete="tel" />
+            </div>
+            <div className="settings">
+              <div className="field">
+                <label htmlFor="rv-date">행사 날짜</label>
+                <input id="rv-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="rv-code">또는 예약번호</label>
+                <input id="rv-code" value={code} onChange={(e) => setCode(e.target.value)} placeholder="예: R1126-AB12" autoCapitalize="characters" />
+              </div>
+            </div>
+          </>
+        )}
         <div className="star-pick" role="group" aria-label="별점">
           {[1, 2, 3, 4, 5].map((n) => (
             <button key={n} className={n <= rating ? "on" : ""} aria-label={`${n}점`} onClick={() => setRating(n)}>

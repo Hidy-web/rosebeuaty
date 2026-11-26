@@ -163,6 +163,8 @@ create index if not exists bookings_date_idx on bookings (date);
 -- 어느 예약의 리뷰인지 (예약당 리뷰 한 개)
 alter table bookings add column if not exists early_fee int not null default 0;
 alter table bookings add column if not exists discount int not null default 0;
+-- 관리자가 손님에게 보내는 리뷰 링크용 비밀 값
+alter table bookings add column if not exists review_token text unique default replace(gen_random_uuid()::text, '-', '');
 alter table reviews add column if not exists booking_id uuid unique references bookings(id) on delete set null;
 alter table bookings enable row level security;
 -- 손님은 예약 목록을 직접 볼 수 없어요. 예약은 아래 함수로만 만들어요.
@@ -282,30 +284,49 @@ language sql stable security definer set search_path = public as $$
 $$;
 grant execute on function lookup_booking(text, text) to anon, authenticated;
 
--- 실제 손님만 리뷰를 써요: 예약번호와 연락처가 맞고, 확정·완료된 예약의 방문일이 지났고, 아직 리뷰가 없을 때.
-create or replace function submit_review(p_code text, p_phone text, p_rating int, p_body text)
+-- 실제 손님만 리뷰를 써요. 아래 셋 중 하나로 본인 확인:
+--   1) 관리자가 보내 준 리뷰 링크(review_token)  2) 예약번호 + 연락처  3) 연락처 + 행사 날짜
+-- 확정·완료된 예약이고 방문일이 지났으며, 예약당 한 번만 쓸 수 있어요.
+drop function if exists submit_review(text, text, int, text);
+create or replace function submit_review(p_token text, p_code text, p_phone text, p_date date, p_rating int, p_body text)
 returns void
 language plpgsql security definer set search_path = public as $$
 declare
   b bookings;
   today date := (now() at time zone 'Asia/Seoul')::date;
+  digits text := regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g');
   label text;
+  matched boolean := false;
 begin
   if p_rating is null or p_rating not between 1 and 5 then raise exception 'invalid_rating'; end if;
   if char_length(btrim(coalesce(p_body, ''))) < 5 then raise exception 'invalid_body'; end if;
-  select * into b from bookings
-   where code = upper(btrim(coalesce(p_code, '')))
-     and phone <> ''
-     and regexp_replace(phone, '[^0-9]', '', 'g') = regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g')
-   for update;
-  if not found then raise exception 'review_not_found'; end if;
+
+  if coalesce(btrim(p_token), '') <> '' then
+    select * into b from bookings where review_token = btrim(p_token) for update;
+    matched := found;
+  elsif coalesce(btrim(p_code), '') <> '' then
+    select * into b from bookings
+     where code = upper(btrim(p_code)) and phone <> '' and regexp_replace(phone, '[^0-9]', '', 'g') = digits
+     for update;
+    matched := found;
+  elsif p_date is not null and char_length(digits) >= 10 then
+    -- 같은 날 같은 번호로 예약이 여러 개면 아직 리뷰가 없는 확정·완료 예약을 먼저 골라요.
+    select * into b from bookings x
+     where x.date = p_date and x.phone <> '' and regexp_replace(x.phone, '[^0-9]', '', 'g') = digits
+     order by (x.status in ('confirmed', 'done')) desc, exists (select 1 from reviews r where r.booking_id = x.id), x.created_at
+     limit 1
+     for update;
+    matched := found;
+  end if;
+
+  if not matched then raise exception 'review_not_found'; end if;
   if b.status not in ('confirmed', 'done') or b.date > today then raise exception 'review_not_yet'; end if;
   if exists (select 1 from reviews where booking_id = b.id) then raise exception 'already_reviewed'; end if;
   select left(string_agg(i->>'name', ', '), 60) into label from jsonb_array_elements(b.items) i;
   insert into reviews (name, rating, service_label, body, booking_id)
   values (left(btrim(b.name), 1) || '*', p_rating, coalesce(label, ''), left(btrim(p_body), 1000), b.id);
 end $$;
-grant execute on function submit_review(text, text, int, text) to anon, authenticated;
+grant execute on function submit_review(text, text, text, date, int, text) to anon, authenticated;
 
 -- 보관 기간이 지난 예약의 개인정보를 지워요. 관리자 화면을 열 때마다 자동으로 실행돼요.
 -- 날짜·메뉴·금액은 매출 확인용으로 남기고 이름·연락처·주소·행사 정보·요청사항만 지워요.

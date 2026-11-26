@@ -86,6 +86,7 @@ export type Booking = {
   deposit: number;
   early_fee?: number;
   discount?: number;
+  review_token?: string | null;
   status: "pending" | "confirmed" | "done" | "canceled";
   memo: string;
   created_at: string;

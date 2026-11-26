@@ -130,8 +130,10 @@ export default function BookingsTab({ data, reload, toast, onPending }: TabProps
                       <>
                         <button className="btn sm ghost" onClick={() => setStatus(b, "done", "시술 완료로 표시했어요")}>시술 완료</button>
                         <button className="btn sm danger" onClick={() => setStatus(b, "canceled", "예약을 취소했어요")}>취소</button>
+                        {b.date <= today && <ReviewLinkButton b={b} toast={toast} />}
                       </>
                     )}
+                    {b.status === "done" && <ReviewLinkButton b={b} toast={toast} />}
                     {b.status === "canceled" && (
                       <button className="btn sm ghost" onClick={() => setStatus(b, "pending", "입금 대기로 되돌렸어요")}>입금 대기로 되돌리기</button>
                     )}
@@ -185,4 +187,20 @@ export default function BookingsTab({ data, reload, toast, onPending }: TabProps
       </div>
     </>
   );
+}
+
+/** 손님에게 보낼 리뷰 링크를 복사해요. 링크로 들어오면 별점과 후기만 쓰면 돼요. */
+function ReviewLinkButton({ b, toast }: { b: Booking; toast: (m: string) => void }) {
+  if (!b.review_token) return null;
+  const url = `${window.location.origin}/?review=${b.review_token}`;
+  async function copy() {
+    const text = `${b.name}님, 오늘 이용해 주셔서 감사해요. 짧은 후기를 남겨 주시면 큰 힘이 돼요.\n${url}`;
+    try {
+      await navigator.clipboard.writeText(text);
+      toast("리뷰 요청 문구와 링크를 복사했어요. 문자나 카톡에 붙여넣어 보내 주세요");
+    } catch {
+      window.prompt("아래 링크를 복사해 주세요", url);
+    }
+  }
+  return <button className="btn sm ghost" onClick={copy}>리뷰 링크 복사</button>;
 }

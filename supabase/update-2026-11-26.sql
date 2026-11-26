@@ -14,6 +14,7 @@ alter table settings add column if not exists refund_policy text not null defaul
 alter table settings add column if not exists promise text not null default '행사 시간에 늦지 않도록 전날 꼭 확인 연락을 드려요.';
 alter table bookings add column if not exists early_fee int not null default 0;
 alter table bookings add column if not exists discount int not null default 0;
+alter table bookings add column if not exists review_token text unique default replace(gen_random_uuid()::text, '-', '');
 
 alter table reviews add column if not exists booking_id uuid unique references bookings(id) on delete set null;
 drop policy if exists "reviews public insert" on reviews;
@@ -38,29 +39,46 @@ end $$;
 revoke execute on function purge_expired_bookings() from public, anon;
 grant execute on function purge_expired_bookings() to authenticated;
 
-create or replace function submit_review(p_code text, p_phone text, p_rating int, p_body text)
+drop function if exists submit_review(text, text, int, text);
+create or replace function submit_review(p_token text, p_code text, p_phone text, p_date date, p_rating int, p_body text)
 returns void
 language plpgsql security definer set search_path = public as $$
 declare
   b bookings;
   today date := (now() at time zone 'Asia/Seoul')::date;
+  digits text := regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g');
   label text;
+  matched boolean := false;
 begin
   if p_rating is null or p_rating not between 1 and 5 then raise exception 'invalid_rating'; end if;
   if char_length(btrim(coalesce(p_body, ''))) < 5 then raise exception 'invalid_body'; end if;
-  select * into b from bookings
-   where code = upper(btrim(coalesce(p_code, '')))
-     and phone <> ''
-     and regexp_replace(phone, '[^0-9]', '', 'g') = regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g')
-   for update;
-  if not found then raise exception 'review_not_found'; end if;
+
+  if coalesce(btrim(p_token), '') <> '' then
+    select * into b from bookings where review_token = btrim(p_token) for update;
+    matched := found;
+  elsif coalesce(btrim(p_code), '') <> '' then
+    select * into b from bookings
+     where code = upper(btrim(p_code)) and phone <> '' and regexp_replace(phone, '[^0-9]', '', 'g') = digits
+     for update;
+    matched := found;
+  elsif p_date is not null and char_length(digits) >= 10 then
+    -- 같은 날 같은 번호로 예약이 여러 개면 아직 리뷰가 없는 확정·완료 예약을 먼저 골라요.
+    select * into b from bookings x
+     where x.date = p_date and x.phone <> '' and regexp_replace(x.phone, '[^0-9]', '', 'g') = digits
+     order by (x.status in ('confirmed', 'done')) desc, exists (select 1 from reviews r where r.booking_id = x.id), x.created_at
+     limit 1
+     for update;
+    matched := found;
+  end if;
+
+  if not matched then raise exception 'review_not_found'; end if;
   if b.status not in ('confirmed', 'done') or b.date > today then raise exception 'review_not_yet'; end if;
   if exists (select 1 from reviews where booking_id = b.id) then raise exception 'already_reviewed'; end if;
   select left(string_agg(i->>'name', ', '), 60) into label from jsonb_array_elements(b.items) i;
   insert into reviews (name, rating, service_label, body, booking_id)
   values (left(btrim(b.name), 1) || '*', p_rating, coalesce(label, ''), left(btrim(p_body), 1000), b.id);
 end $$;
-grant execute on function submit_review(text, text, int, text) to anon, authenticated;
+grant execute on function submit_review(text, text, text, date, int, text) to anon, authenticated;
 
 create or replace function create_booking(
   p_name text, p_phone text, p_items jsonb, p_region text, p_address text,
