@@ -1,10 +1,11 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sb } from "@/lib/supabase";
 import type { Region, Settings } from "@/lib/types";
 import { DEFAULT_EXTRA_NOTICE, hm } from "@/lib/time";
 import type { TabProps } from "./AdminApp";
 import { DEFAULT_PROMISE, DEFAULT_REFUND_POLICY } from "@/lib/pricing";
+import { copyText } from "@/lib/share";
 
 const HOURS = Array.from({ length: 33 }, (_, i) => 300 + i * 30); // 05:00 ~ 21:00
 
@@ -120,6 +121,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
         <button className="btn sm ghost" onClick={() => set("regions", [...s.regions, { id: "r" + Date.now().toString(36), name: "", fee: 0 }])}>+ 지역 추가</button>
       </div>
       <div><button className="btn" disabled={saving} onClick={save}>{saving ? "저장 중…" : "저장"}</button></div>
+      <KakaoBox toast={toast} />
       <PasswordBox toast={toast} />
     </section>
   );
@@ -149,6 +151,148 @@ function PasswordBox({ toast }: { toast: (m: string) => void }) {
         <div className="field"><label htmlFor="s-pw2">새 비밀번호 한 번 더</label><input id="s-pw2" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>
       </div>
       <div><button className="btn ghost" disabled={busy || !pw} onClick={change}>{busy ? "바꾸는 중…" : "비밀번호 바꾸기"}</button></div>
+    </>
+  );
+}
+
+const KAKAO_RESULT: Record<string, string> = {
+  ok: "카카오톡 연결이 끝났어요. 나와의 채팅에 시험 알림이 왔는지 확인해 보세요",
+  denied: "카카오 로그인에서 동의를 하지 않아 연결되지 않았어요",
+  expired: "연결 시간이 지났어요. '카카오톡 연결하기'를 다시 눌러 주세요",
+  token_failed: "카카오 연결에 실패했어요. REST API 키와 리다이렉트 URI, 클라이언트 시크릿을 확인해 주세요",
+  no_consent: "연결은 됐지만 '카카오톡 메시지 전송' 동의가 없어요. 동의항목을 켠 뒤 다시 연결해 주세요",
+  send_failed: "연결은 됐지만 시험 알림을 보내지 못했어요. '시험 알림 보내기'를 눌러 보세요",
+  error: "카카오 연결에 실패했어요. 다시 시도해 주세요",
+};
+
+const KAKAO_ERROR: Record<string, string> = {
+  reconnect_needed: "카카오 연결이 만료됐어요. '다시 연결하기'를 눌러 주세요",
+  no_message_consent: "'카카오톡 메시지 전송' 동의가 없어요. 동의항목을 켠 뒤 다시 연결해 주세요",
+  not_connected: "아직 카카오톡이 연결되지 않았어요",
+  bad_slot: "다시 시도해 주세요",
+  db_update_needed: "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요",
+};
+
+type KakaoPerson = { slot: number; label: string; connected: boolean; connected_at: string | null; last_sent_at: string | null; last_error: string };
+type KakaoStatus = { people: KakaoPerson[]; missing: string[] };
+
+function KakaoBox({ toast }: { toast: (m: string) => void }) {
+  const [st, setSt] = useState<KakaoStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [name, setName] = useState("");
+
+  async function call(path: string, body?: object) {
+    const { data } = await sb().auth.getSession();
+    const r = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+      body: JSON.stringify(body ?? {}),
+    });
+    return r.json().catch(() => ({ error: "error" }));
+  }
+
+  async function load(body?: object) {
+    setBusy(true);
+    const j = await call("/api/kakao/admin", body ?? {});
+    setBusy(false);
+    if (Array.isArray(j.people)) setSt({ people: j.people, missing: j.missing ?? [] });
+    return j;
+  }
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("kakao");
+    if (q) {
+      toast(KAKAO_RESULT[q] ?? KAKAO_RESULT.error);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const people = st?.people ?? [];
+  const used = new Set(people.map((p) => p.slot));
+  const nextSlot = [1, 2, 3, 4, 5].find((n) => !used.has(n));
+
+  async function start(slot: number, mode: "self" | "invite", label?: string) {
+    setBusy(true);
+    const j = await call("/api/kakao/connect", { slot, mode, label });
+    setBusy(false);
+    if (!j.url) {
+      return toast(j.error === "missing_env" ? "Vercel 환경 변수가 아직 없어요. 안내대로 먼저 넣어 주세요" : KAKAO_ERROR[j.error] ?? "연결을 시작하지 못했어요. 다시 시도해 주세요");
+    }
+    if (mode === "self") return void (window.location.href = j.url);
+    const who = label || "알림 받는 분";
+    const text = `[${who}] 예약 알림을 카카오톡으로 받으려면 아래 링크를 열고 카카오 로그인 후 '카카오톡 메시지 전송'에 동의해 주세요. (오늘 하루만 쓸 수 있어요)\n${j.url}`;
+    if (await copyText(text)) toast("초대 링크를 복사했어요. 카톡으로 그분께 보내 주세요");
+    else toast("링크를 복사하지 못했어요. 다시 시도해 주세요");
+    setName("");
+    load();
+  }
+
+  async function add(mode: "self" | "invite") {
+    if (!nextSlot) return toast("알림은 5명까지 받을 수 있어요");
+    const label = name.trim() || (mode === "self" ? "나" : "");
+    if (mode === "invite" && !label) return toast("초대할 분의 이름을 먼저 적어 주세요");
+    await start(nextSlot, mode, label);
+  }
+
+  async function test(p: KakaoPerson) {
+    const j = await load({ action: "test", slot: p.slot });
+    toast(j.ok ? `${p.label || "이 분"}께 시험 알림을 보냈어요` : KAKAO_ERROR[j.error] ?? "시험 알림을 보내지 못했어요");
+  }
+
+  async function remove(p: KakaoPerson) {
+    if (!window.confirm(`${p.label || "이 분"}의 카카오톡 알림을 끊을까요?`)) return;
+    const j = await load({ action: "disconnect", slot: p.slot });
+    if (j.ok) toast("알림을 끊었어요");
+  }
+
+  const when = (s: string | null) => (s ? new Date(s).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "");
+
+  return (
+    <>
+      <h3>카카오톡 예약 알림</h3>
+      <p className="note">손님이 예약하면 알림 받는 분들의 카카오톡 &lsquo;나와의 채팅&rsquo;으로 예약 내용을 보내 드려요. 무료예요. 다른 분은 &lsquo;초대 링크 복사&rsquo;로 링크를 보내 그분 휴대폰에서 연결하게 하면 돼요.</p>
+      {!st ? (
+        <p className="muted">확인 중…</p>
+      ) : st.missing.length ? (
+        <p className="muted">아직 준비가 안 됐어요. Vercel 환경 변수(KAKAO_REST_API_KEY, SUPABASE_SECRET_KEY)를 먼저 넣어 주세요.</p>
+      ) : (
+        <>
+          {people.length === 0 && <p className="muted">아직 연결된 사람이 없어요.</p>}
+          {people.map((p) => (
+            <div key={p.slot} style={{ borderTop: "1px solid rgba(0,0,0,.08)", padding: "10px 0" }}>
+              <p>
+                <b>{p.label || `알림 ${p.slot}`}</b> ·{" "}
+                {p.connected ? `연결됨${p.last_sent_at ? ` · 마지막 알림 ${when(p.last_sent_at)}` : p.connected_at ? ` · ${when(p.connected_at)} 연결` : ""}` : "초대 링크 보냄 · 아직 연결 전"}
+              </p>
+              {p.connected && p.last_error && <p className="note">⚠️ {KAKAO_ERROR[p.last_error] ?? `최근 알림을 보내지 못했어요 (${p.last_error})`}</p>}
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {p.connected && <button className="btn sm ghost" disabled={busy} onClick={() => test(p)}>시험 알림</button>}
+                {(!p.connected || p.last_error) && (
+                  <button className="btn sm ghost" disabled={busy} onClick={() => start(p.slot, "invite", p.label)}>초대 링크 다시 복사</button>
+                )}
+                {p.connected && p.last_error && (
+                  <button className="btn sm ghost" disabled={busy} onClick={() => start(p.slot, "self", p.label)}>이 휴대폰에서 다시 연결</button>
+                )}
+                <button className="btn sm ghost" disabled={busy} onClick={() => remove(p)}>{p.connected ? "알림 끊기" : "초대 취소"}</button>
+              </div>
+            </div>
+          ))}
+          {nextSlot && (
+            <div style={{ borderTop: "1px solid rgba(0,0,0,.08)", paddingTop: 10 }}>
+              <div className="field">
+                <label htmlFor="k-name">알림 받을 사람 추가 · 이름</label>
+                <input id="k-name" value={name} maxLength={20} placeholder={people.length ? "예: 실장님" : "예: 마크"} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="btn" disabled={busy} onClick={() => add("self")}>이 휴대폰에서 연결</button>
+                <button className="btn ghost" disabled={busy} onClick={() => add("invite")}>초대 링크 복사</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 }

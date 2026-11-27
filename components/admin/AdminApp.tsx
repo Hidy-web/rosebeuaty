@@ -86,7 +86,9 @@ function Login() {
 function Dashboard({ email }: { email: string }) {
   const { data, error, reload } = useShopData();
   const toast = useToast();
-  const [tab, setTab] = useState<Tab>("bookings");
+  const [tab, setTab] = useState<Tab>(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).has("kakao") ? "settings" : "bookings",
+  );
   const [pending, setPending] = useState(0);
 
   // 보관 기간이 지난 예약의 개인정보를 자동으로 지워요.
