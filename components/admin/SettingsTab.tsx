@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { sb } from "@/lib/supabase";
 import type { Region, Settings } from "@/lib/types";
 import { DEFAULT_EXTRA_NOTICE, hm } from "@/lib/time";
@@ -120,6 +120,7 @@ export default function SettingsTab({ data, reload, toast }: TabProps) {
         <button className="btn sm ghost" onClick={() => set("regions", [...s.regions, { id: "r" + Date.now().toString(36), name: "", fee: 0 }])}>+ 지역 추가</button>
       </div>
       <div><button className="btn" disabled={saving} onClick={save}>{saving ? "저장 중…" : "저장"}</button></div>
+      <KakaoBox toast={toast} />
       <PasswordBox toast={toast} />
     </section>
   );
@@ -149,6 +150,106 @@ function PasswordBox({ toast }: { toast: (m: string) => void }) {
         <div className="field"><label htmlFor="s-pw2">새 비밀번호 한 번 더</label><input id="s-pw2" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></div>
       </div>
       <div><button className="btn ghost" disabled={busy || !pw} onClick={change}>{busy ? "바꾸는 중…" : "비밀번호 바꾸기"}</button></div>
+    </>
+  );
+}
+
+const KAKAO_RESULT: Record<string, string> = {
+  ok: "카카오톡 연결이 끝났어요. 나와의 채팅에 시험 알림이 왔는지 확인해 보세요",
+  denied: "카카오 로그인에서 동의를 하지 않아 연결되지 않았어요",
+  expired: "연결 시간이 지났어요. '카카오톡 연결하기'를 다시 눌러 주세요",
+  token_failed: "카카오 연결에 실패했어요. REST API 키와 리다이렉트 URI, 클라이언트 시크릿을 확인해 주세요",
+  no_consent: "연결은 됐지만 '카카오톡 메시지 전송' 동의가 없어요. 동의항목을 켠 뒤 다시 연결해 주세요",
+  send_failed: "연결은 됐지만 시험 알림을 보내지 못했어요. '시험 알림 보내기'를 눌러 보세요",
+  error: "카카오 연결에 실패했어요. 다시 시도해 주세요",
+};
+
+const KAKAO_ERROR: Record<string, string> = {
+  reconnect_needed: "카카오 연결이 만료됐어요. '다시 연결하기'를 눌러 주세요",
+  no_message_consent: "'카카오톡 메시지 전송' 동의가 없어요. 동의항목을 켠 뒤 다시 연결해 주세요",
+  not_connected: "아직 카카오톡이 연결되지 않았어요",
+  db_update_needed: "데이터베이스 업데이트가 필요해요. 안내받은 SQL을 먼저 실행해 주세요",
+};
+
+type KakaoStatus = { connected: boolean; connected_at: string | null; last_sent_at: string | null; last_error: string; missing: string[] };
+
+function KakaoBox({ toast }: { toast: (m: string) => void }) {
+  const [st, setSt] = useState<KakaoStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function call(path: string, body?: object) {
+    const { data } = await sb().auth.getSession();
+    const r = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+      body: JSON.stringify(body ?? {}),
+    });
+    return r.json().catch(() => ({ error: "error" }));
+  }
+
+  async function load(action?: string) {
+    setBusy(true);
+    const j = await call("/api/kakao/admin", action ? { action } : {});
+    setBusy(false);
+    if (j.connected !== undefined) setSt(j);
+    return j;
+  }
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("kakao");
+    if (q) {
+      toast(KAKAO_RESULT[q] ?? KAKAO_RESULT.error);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function connect() {
+    setBusy(true);
+    const j = await call("/api/kakao/connect");
+    if (j.url) return void (window.location.href = j.url);
+    setBusy(false);
+    toast(j.error === "missing_env" ? "Vercel 환경 변수가 아직 없어요. 안내대로 먼저 넣어 주세요" : KAKAO_ERROR[j.error] ?? "연결을 시작하지 못했어요. 다시 시도해 주세요");
+  }
+
+  async function test() {
+    const j = await load("test");
+    toast(j.ok ? "시험 알림을 보냈어요. 카톡 나와의 채팅을 확인해 보세요" : KAKAO_ERROR[j.error] ?? "시험 알림을 보내지 못했어요");
+  }
+
+  async function disconnect() {
+    if (!window.confirm("카카오톡 예약 알림 연결을 끊을까요?")) return;
+    const j = await load("disconnect");
+    if (j.ok) toast("연결을 끊었어요");
+  }
+
+  const when = (s: string | null) => (s ? new Date(s).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }) : "");
+
+  return (
+    <>
+      <h3>카카오톡 예약 알림</h3>
+      <p className="note">손님이 예약하면 관리자 카카오톡 &lsquo;나와의 채팅&rsquo;으로 예약 내용을 보내 드려요. 무료예요.</p>
+      {!st ? (
+        <p className="muted">확인 중…</p>
+      ) : st.missing?.length ? (
+        <p className="muted">아직 준비가 안 됐어요. Vercel 환경 변수(KAKAO_REST_API_KEY, SUPABASE_SECRET_KEY)를 먼저 넣어 주세요.</p>
+      ) : st.connected ? (
+        <>
+          <p>
+            연결됨{st.connected_at ? ` · ${when(st.connected_at)} 연결` : ""}
+            {st.last_sent_at ? ` · 마지막 알림 ${when(st.last_sent_at)}` : ""}
+          </p>
+          {st.last_error && <p className="note">⚠️ {KAKAO_ERROR[st.last_error] ?? `최근 알림을 보내지 못했어요 (${st.last_error})`}</p>}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="btn ghost" disabled={busy} onClick={test}>시험 알림 보내기</button>
+            <button className="btn ghost" disabled={busy} onClick={connect}>다시 연결하기</button>
+            <button className="btn sm ghost" disabled={busy} onClick={disconnect}>연결 끊기</button>
+          </div>
+        </>
+      ) : (
+        <div><button className="btn" disabled={busy} onClick={connect}>{busy ? "여는 중…" : "카카오톡 연결하기"}</button></div>
+      )}
     </>
   );
 }

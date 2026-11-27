@@ -185,6 +185,13 @@ export default function BookingFlow({ data, onExit, toast }: { data: ShopData; o
       }
       return;
     }
+    // 관리자 카카오톡으로 새 예약 알림 (기다리지 않아요. 실패해도 예약은 이미 저장됐어요)
+    fetch("/api/notify-booking", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: (res as Made).code, phone: form.phone }),
+      keepalive: true,
+    }).catch(() => {});
     setMade({ res: res as Made, date, start, deadline: new Date(Date.now() + st.deadline_hours * 3600e3) });
     setStep(4);
     window.scrollTo(0, 0);
