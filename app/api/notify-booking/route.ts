@@ -1,6 +1,6 @@
 // 손님이 예약을 마치면 화면이 이 주소를 불러요. 관리자 카카오톡으로 새 예약을 알려요.
 // 예약 저장은 이미 끝난 뒤라, 여기서 실패해도 예약에는 영향이 없어요.
-import { missingEnv, sendMemo, serviceDb } from "@/lib/kakao-server";
+import { missingEnv, sendAll, serviceDb } from "@/lib/kakao-server";
 import { dLabel, hm } from "@/lib/time";
 
 export const dynamic = "force-dynamic";
@@ -60,10 +60,11 @@ export async function POST(req: Request) {
   if (b.event_note) lines.splice(4, 0, `행사 ${b.event_note}`);
   if (b.memo) lines.push(`요청 ${b.memo}`);
 
+  // 알림 받는 사람 모두에게 보내요. 한 사람이 실패해도 다른 사람에게는 가요.
   try {
-    await sendMemo(lines.join("\n"), `${new URL(req.url).origin}/admin`);
+    const r = await sendAll(lines.join("\n"), `${new URL(req.url).origin}/admin`);
+    return Response.json({ ok: r.sent > 0, ...r });
   } catch {
     return Response.json({ ok: false, reason: "send_failed" });
   }
-  return Response.json({ ok: true });
 }
